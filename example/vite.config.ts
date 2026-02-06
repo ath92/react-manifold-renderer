@@ -15,8 +15,12 @@ export default defineConfig({
       ],
     }),
   ],
+  resolve: {
+    dedupe: ['react', 'react-dom', 'react-reconciler'],
+  },
   optimizeDeps: {
     exclude: ['manifold-3d'],
+    include: ['react-manifold > react-reconciler'],
   },
   build: {
     commonjsOptions: {
