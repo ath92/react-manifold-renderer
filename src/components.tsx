@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Mesh } from 'manifold-3d';
 import { reconciler, Container } from './reconciler';
 import { initManifold, isManifoldReady } from './manifold-module';
@@ -16,64 +16,71 @@ export function CsgRoot({ children, onMesh, onError, onReady }: CsgRootProps) {
   const [ready, setReady] = useState(isManifoldReady());
   const containerRef = useRef<Container | null>(null);
   const fiberRef = useRef<ReturnType<typeof reconciler.createContainer> | null>(null);
+  const childrenRef = useRef<React.ReactNode>(children);
+  const onMeshRef = useRef(onMesh);
+  const onErrorRef = useRef(onError);
+
+  // Keep refs updated every render
+  childrenRef.current = children;
+  onMeshRef.current = onMesh;
+  onErrorRef.current = onError;
 
   // Initialize WASM module
   useEffect(() => {
+    let mounted = true;
     if (!ready) {
       initManifold()
         .then(() => {
-          setReady(true);
-          onReady?.();
+          if (mounted) {
+            setReady(true);
+            onReady?.();
+          }
         })
-        .catch((err) => onError?.(err));
+        .catch((err) => onErrorRef.current?.(err));
     }
-  }, []);
+    return () => { mounted = false; };
+  }, [ready, onReady]);
 
-  // Create reconciler container once ready
-  useEffect(() => {
+  // Create container and update children
+  useLayoutEffect(() => {
     if (!ready) return;
 
-    const container: Container = {
-      root: null,
-      onMesh,
-      onError,
-    };
-    containerRef.current = container;
+    // Create container once
+    if (!fiberRef.current) {
+      const container: Container = {
+        root: null,
+        onMesh: (mesh) => onMeshRef.current(mesh),
+        onError: (err) => onErrorRef.current?.(err),
+      };
+      containerRef.current = container;
 
-    fiberRef.current = reconciler.createContainer(
-      container,
-      0, // LegacyRoot
-      null, // hydrationCallbacks
-      false, // isStrictMode
-      null, // concurrentUpdatesByDefaultOverride
-      'csg', // identifierPrefix
-      (error: Error) => onError?.(error), // onUncaughtError
-      (error: Error) => onError?.(error), // onCaughtError
-      (error: Error) => onError?.(error), // onRecoverableError
-      () => {} // onDefaultTransitionIndicator
-    );
+      fiberRef.current = reconciler.createContainer(
+        container,
+        0, // LegacyRoot
+        null, // hydrationCallbacks
+        false, // isStrictMode
+        null, // concurrentUpdatesByDefaultOverride
+        'csg', // identifierPrefix
+        (error: Error) => onErrorRef.current?.(error), // onUncaughtError
+        (error: Error) => onErrorRef.current?.(error), // onCaughtError
+        (error: Error) => onErrorRef.current?.(error), // onRecoverableError
+        () => {} // onDefaultTransitionIndicator
+      );
+    }
 
-    reconciler.updateContainer(children, fiberRef.current, null, () => {});
+    // Update children
+    reconciler.updateContainer(childrenRef.current, fiberRef.current, null, () => {});
+  });
 
+  // Cleanup on unmount
+  useEffect(() => {
     return () => {
-      reconciler.updateContainer(null, fiberRef.current!, null, () => {});
+      if (fiberRef.current) {
+        reconciler.updateContainer(null, fiberRef.current, null, () => {});
+        fiberRef.current = null;
+      }
     };
-  }, [ready]);
-
-  // Update children
-  useEffect(() => {
-    if (fiberRef.current && ready) {
-      reconciler.updateContainer(children, fiberRef.current, null, () => {});
-    }
-  }, [children, ready]);
-
-  // Update callbacks
-  useEffect(() => {
-    if (containerRef.current) {
-      containerRef.current.onMesh = onMesh;
-      containerRef.current.onError = onError;
-    }
-  }, [onMesh, onError]);
+  }, []);
 
   return null;
 }

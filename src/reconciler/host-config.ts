@@ -68,7 +68,7 @@ export const hostConfig: Record<string, any> = {
     oldProps: Record<string, unknown>,
     newProps: Record<string, unknown>
   ): boolean {
-    return !shallowEqual(oldProps, newProps);
+    return !propsEqual(oldProps, newProps);
   },
 
   commitUpdate(
@@ -125,10 +125,12 @@ export const hostConfig: Record<string, any> = {
 
         if (container.root.manifold) {
           const mesh = container.root.manifold.getMesh();
-          container.onMesh(mesh);
+          // Defer callback to break synchronous update cycle
+          queueMicrotask(() => container.onMesh(mesh));
         }
       } catch (error) {
-        container.onError?.(error as Error);
+        // Defer error callback too
+        queueMicrotask(() => container.onError?.(error as Error));
       }
     }
   },
@@ -167,15 +169,52 @@ export const hostConfig: Record<string, any> = {
   detachDeletedInstance: () => {},
 };
 
-function shallowEqual(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
-  const keysA = Object.keys(a);
-  const keysB = Object.keys(b);
+function propsEqual(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const keysA = Object.keys(a).filter(k => k !== 'children');
+  const keysB = Object.keys(b).filter(k => k !== 'children');
 
   if (keysA.length !== keysB.length) return false;
 
   for (const key of keysA) {
-    if (a[key] !== b[key]) return false;
+    if (!valuesEqual(a[key], b[key])) return false;
   }
 
   return true;
+}
+
+function valuesEqual(a: unknown, b: unknown): boolean {
+  // Same reference or primitive equality
+  if (a === b) return true;
+
+  // Handle null/undefined
+  if (a == null || b == null) return a === b;
+
+  // Handle arrays (common for size, position, etc.)
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
+  }
+
+  // Different types
+  if (typeof a !== typeof b) return false;
+
+  // For objects, do shallow comparison (one level deep)
+  if (typeof a === 'object' && typeof b === 'object') {
+    const objA = a as Record<string, unknown>;
+    const objB = b as Record<string, unknown>;
+    const keysA = Object.keys(objA);
+    const keysB = Object.keys(objB);
+
+    if (keysA.length !== keysB.length) return false;
+
+    for (const key of keysA) {
+      if (objA[key] !== objB[key]) return false;
+    }
+    return true;
+  }
+
+  return false;
 }
