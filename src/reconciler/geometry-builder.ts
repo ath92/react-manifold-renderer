@@ -64,11 +64,14 @@ export function buildGeometry(node: CsgNode): Manifold | null {
     }
 
     // --- Boolean Operations ---
+    // NOTE: Single-child cases use identity transform to create a copy,
+    // avoiding shared ownership with child (which would cause double-free)
     case 'union': {
       if (childManifolds.length === 0) {
         result = null;
       } else if (childManifolds.length === 1) {
-        result = childManifolds[0];
+        // Create copy via identity transform to avoid shared ownership
+        result = childManifolds[0].translate([0, 0, 0]);
       } else {
         result = M.union(childManifolds);
       }
@@ -79,10 +82,13 @@ export function buildGeometry(node: CsgNode): Manifold | null {
       if (childManifolds.length === 0) {
         result = null;
       } else if (childManifolds.length === 1) {
-        result = childManifolds[0];
+        result = childManifolds[0].translate([0, 0, 0]);
       } else {
         const [first, ...rest] = childManifolds;
-        result = first.subtract(M.union(rest));
+        // Create temporary union, use it, then dispose
+        const restUnion = M.union(rest);
+        result = first.subtract(restUnion);
+        restUnion.delete();
       }
       break;
     }
@@ -91,7 +97,7 @@ export function buildGeometry(node: CsgNode): Manifold | null {
       if (childManifolds.length === 0) {
         result = null;
       } else if (childManifolds.length === 1) {
-        result = childManifolds[0];
+        result = childManifolds[0].translate([0, 0, 0]);
       } else {
         result = M.intersection(childManifolds);
       }
@@ -126,7 +132,7 @@ export function buildGeometry(node: CsgNode): Manifold | null {
     // --- Group (passthrough) ---
     case 'group': {
       if (childManifolds.length === 1) {
-        result = childManifolds[0];
+        result = childManifolds[0].translate([0, 0, 0]);
       } else if (childManifolds.length > 1) {
         result = M.union(childManifolds);
       }
