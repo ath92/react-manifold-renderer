@@ -12,7 +12,7 @@ import {
   Translate,
   Rotate,
   meshToGeometry,
-} from "react-manifold";
+} from "@manifold-studio/react-manifold";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

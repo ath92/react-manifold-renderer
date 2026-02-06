@@ -4,26 +4,50 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-react-manifold is a custom React renderer for declarative CSG (Constructive Solid Geometry) modeling using the manifold-3d WASM library. It allows building 3D geometry using React components with boolean operations, transforms, and primitives.
+Manifold Studio is a 3D solid modeling tool built with React. The project uses a monorepo structure with:
+
+- **apps/studio** - The main 3D modeling application (React + Three.js + React Three Fiber)
+- **packages/react-manifold** - Custom React renderer for declarative CSG modeling using manifold-3d
 
 ## Commands
 
 ```bash
-# Library development
-pnpm build              # Build library with tsup (outputs to dist/)
-pnpm dev                # Watch mode for library development
-pnpm typecheck          # TypeScript type checking
-pnpm lint               # ESLint
-pnpm clean              # Remove dist/
+# Install dependencies (from root)
+pnpm install
 
-# Example app (runs from root)
-pnpm example            # Build library then start example Vite dev server
+# Development
+pnpm dev                # Start the studio app dev server
+pnpm build              # Build all packages and apps
+pnpm build:lib          # Build only the react-manifold library
+pnpm build:studio       # Build only the studio app
+pnpm typecheck          # Type check all packages
+pnpm lint               # Lint all packages
+pnpm clean              # Clean all build outputs
 
-# Example app directly
-cd example && pnpm dev  # Start example dev server (requires library built first)
+# Working in specific packages
+cd packages/react-manifold && pnpm dev    # Watch mode for library
+cd apps/studio && pnpm dev                # Start studio dev server
 ```
 
-## Architecture
+## Monorepo Structure
+
+```
+├── apps/
+│   └── studio/              # 3D modeling application
+│       └── src/
+│           ├── App.tsx      # Main app with building generator demo
+│           └── main.tsx     # Entry point, sets WASM path
+├── packages/
+│   └── react-manifold/      # CSG React renderer library
+│       └── src/
+│           ├── components.tsx       # CsgRoot + primitive components
+│           ├── reconciler/          # React reconciler implementation
+│           ├── three.ts             # Three.js BufferGeometry conversion
+│           └── r3f.tsx              # React Three Fiber integration
+└── pnpm-workspace.yaml
+```
+
+## Library Architecture (packages/react-manifold)
 
 ### React Reconciler Pattern
 The library implements a custom React reconciler (similar to react-three-fiber) that maps React component operations to CSG tree mutations:
@@ -68,11 +92,11 @@ React Components → CsgRoot → Reconciler → CsgNode Tree → buildGeometry()
 
 ## Vite Integration
 
-The example app demonstrates required Vite config for WASM:
+The studio app requires specific Vite config for WASM:
 - `vite-plugin-static-copy` copies manifold.wasm to public
 - `resolve.dedupe` for react/react-dom/react-reconciler prevents multiple React copies
 - `optimizeDeps.exclude` for manifold-3d
 
 ## React Version Compatibility
 
-Uses React 18 with react-reconciler@0.29. The example pins to React 18 and @react-three/fiber@8 for compatibility.
+Uses React 18 with react-reconciler@0.29. The studio app uses @react-three/fiber@8 for compatibility.
