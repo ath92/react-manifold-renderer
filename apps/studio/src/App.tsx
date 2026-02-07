@@ -9,6 +9,7 @@ import {
 } from "@manifold-studio/react-manifold";
 import type { CsgTreeNode } from "./types/CsgTree";
 import { CsgTreeRenderer } from "./components/CsgTreeRenderer";
+import { CsgTreePanel } from "./components/CsgTreePanel";
 import { DrawTool } from "./draw-tool/ExtrudePolygonTool";
 
 // ─── CSG Scene ───────────────────────────────────────────────────────────────
@@ -114,6 +115,8 @@ function App() {
             {drawToolActive ? "Drawing (Esc to cancel)" : "Draw Building"}
           </button>
         </fieldset>
+
+        {tree && <CsgTreePanel tree={tree} />}
 
         <div style={{ marginTop: "auto", fontSize: "12px", color: "#666" }}>
           <p>Drag to rotate</p>
