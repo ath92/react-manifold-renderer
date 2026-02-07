@@ -16,7 +16,7 @@ export default defineConfig({
     }),
   ],
   resolve: {
-    dedupe: ["react", "react-dom"],
+    dedupe: ["react", "react-dom", "three"],
   },
   optimizeDeps: {
     exclude: ["manifold-3d"],

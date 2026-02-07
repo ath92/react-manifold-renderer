@@ -1,7 +1,6 @@
 import { useState, useCallback, useMemo } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import * as THREE from "three";
 import type { Mesh } from "manifold-3d";
 import {
   CsgRoot,
@@ -9,7 +8,8 @@ import {
   meshToGeometry,
 } from "@manifold-studio/react-manifold";
 import type { Polygon, WindowConfig } from "./types/BuildingTypes";
-import { Building } from "./components/Building";
+import { Building } from "./building-components/Building";
+import { DrawTool } from "./draw-tool/ExtrudePolygonTool";
 
 // ─── CSG Scene ───────────────────────────────────────────────────────────────
 
@@ -91,6 +91,7 @@ const DEFAULT_POLYGON: Polygon = [
 ];
 
 function App() {
+  const [drawToolActive, setDrawToolActive] = useState(false);
   const [levels, setLevels] = useState(4);
   const [floorThickness, setFloorThickness] = useState(0.15);
   const [wallHeight, setWallHeight] = useState(1.2);
@@ -346,6 +347,31 @@ function App() {
           />
         </fieldset>
 
+        <fieldset
+          style={{
+            border: "1px solid #444",
+            borderRadius: "4px",
+            padding: "12px",
+          }}
+        >
+          <legend style={{ color: "#aaa", fontSize: "12px" }}>Tools</legend>
+          <button
+            onClick={() => setDrawToolActive((v) => !v)}
+            style={{
+              width: "100%",
+              padding: "8px",
+              background: drawToolActive ? "#4fc3f7" : "#333",
+              color: drawToolActive ? "#000" : "#fff",
+              border: "1px solid #555",
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontSize: "13px",
+            }}
+          >
+            {drawToolActive ? "Drawing (Esc to cancel)" : "Draw Polygon"}
+          </button>
+        </fieldset>
+
         <div style={{ marginTop: "auto", fontSize: "12px", color: "#666" }}>
           <p>Drag to rotate</p>
           <p>Scroll to zoom</p>
@@ -370,8 +396,10 @@ function App() {
             windowConfig={windowConfig}
           />
 
+          <DrawTool active={drawToolActive} />
+
           <gridHelper args={[20, 20, "#444", "#333"]} />
-          <OrbitControls makeDefault />
+          <OrbitControls makeDefault enabled={!drawToolActive} />
         </Canvas>
       </div>
     </div>
