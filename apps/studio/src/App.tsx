@@ -7,9 +7,7 @@ import {
   Rotate,
   meshToGeometry,
 } from "@manifold-studio/react-manifold";
-import type { Polygon, WindowConfig } from "./types/BuildingTypes";
 import type { CsgTreeNode } from "./types/CsgTree";
-import { buildBuilding } from "./building-components/Building";
 import { CsgTreeRenderer } from "./components/CsgTreeRenderer";
 import { DrawTool } from "./draw-tool/ExtrudePolygonTool";
 
@@ -59,64 +57,15 @@ function CsgScene({ tree }: { tree: CsgTreeNode }) {
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
-const DEFAULT_POLYGON: Polygon = [
-  [0, 0],
-  [6, 0],
-  [6, 4],
-  [0, 4],
-];
-
 function App() {
   const [drawToolActive, setDrawToolActive] = useState(false);
-  const [levels, setLevels] = useState(4);
-  const [floorThickness, setFloorThickness] = useState(0.15);
-  const [wallHeight, setWallHeight] = useState(1.2);
-  const [wallThickness, setWallThickness] = useState(0.12);
-  const [roofThickness, setRoofThickness] = useState(0.2);
-  const [roofOverhang, setRoofOverhang] = useState(0.3);
-  const [windowWidth, setWindowWidth] = useState(0.6);
-  const [windowHeight, setWindowHeight] = useState(0.7);
-  const [windowSpacing, setWindowSpacing] = useState(0.5);
-  const [windowSillHeight, setWindowSillHeight] = useState(0.3);
   const [drawnShapes, setDrawnShapes] = useState<CsgTreeNode[]>([]);
 
-  const windowConfig = useMemo<WindowConfig>(
-    () => ({
-      width: windowWidth,
-      height: windowHeight,
-      spacing: windowSpacing,
-      sillHeight: windowSillHeight,
-    }),
-    [windowWidth, windowHeight, windowSpacing, windowSillHeight],
-  );
-
-  const buildingTree = useMemo(
-    () =>
-      buildBuilding({
-        polygon: DEFAULT_POLYGON,
-        levels,
-        floorThickness,
-        wallHeight,
-        wallThickness,
-        roofThickness,
-        roofOverhang,
-        windows: windowConfig,
-      }),
-    [
-      levels,
-      floorThickness,
-      wallHeight,
-      wallThickness,
-      roofThickness,
-      roofOverhang,
-      windowConfig,
-    ],
-  );
-
-  const tree = useMemo<CsgTreeNode>(() => {
-    if (drawnShapes.length === 0) return buildingTree;
-    return { type: "union", children: [buildingTree, ...drawnShapes] };
-  }, [buildingTree, drawnShapes]);
+  const tree = useMemo<CsgTreeNode | null>(() => {
+    if (drawnShapes.length === 0) return null;
+    if (drawnShapes.length === 1) return drawnShapes[0];
+    return { type: "union", children: drawnShapes };
+  }, [drawnShapes]);
 
   const handleDrawComplete = useCallback((node: CsgTreeNode) => {
     setDrawnShapes((prev) => [...prev, node]);
@@ -136,225 +85,10 @@ function App() {
           overflowY: "auto",
         }}
       >
-        <h2 style={{ margin: 0 }}>React Manifold</h2>
+        <h2 style={{ margin: 0 }}>Manifold Studio</h2>
         <p style={{ margin: 0, fontSize: "14px", color: "#888" }}>
-          Building Generator
+          Draw buildings on the ground plane
         </p>
-
-        <fieldset
-          style={{
-            border: "1px solid #444",
-            borderRadius: "4px",
-            padding: "12px",
-          }}
-        >
-          <legend style={{ color: "#aaa", fontSize: "12px" }}>Structure</legend>
-
-          <label
-            style={{ display: "block", marginBottom: "8px", fontSize: "13px" }}
-          >
-            Levels: {levels}
-          </label>
-          <input
-            type="range"
-            min={1}
-            max={10}
-            step={1}
-            value={levels}
-            onChange={(e) => setLevels(parseInt(e.target.value))}
-            style={{ width: "100%" }}
-          />
-
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              marginTop: "12px",
-              fontSize: "13px",
-            }}
-          >
-            Floor Thickness: {floorThickness.toFixed(2)}
-          </label>
-          <input
-            type="range"
-            min={0.05}
-            max={0.4}
-            step={0.01}
-            value={floorThickness}
-            onChange={(e) => setFloorThickness(parseFloat(e.target.value))}
-            style={{ width: "100%" }}
-          />
-
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              marginTop: "12px",
-              fontSize: "13px",
-            }}
-          >
-            Wall Height: {wallHeight.toFixed(2)}
-          </label>
-          <input
-            type="range"
-            min={0.5}
-            max={2.5}
-            step={0.05}
-            value={wallHeight}
-            onChange={(e) => setWallHeight(parseFloat(e.target.value))}
-            style={{ width: "100%" }}
-          />
-
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              marginTop: "12px",
-              fontSize: "13px",
-            }}
-          >
-            Wall Thickness: {wallThickness.toFixed(2)}
-          </label>
-          <input
-            type="range"
-            min={0.05}
-            max={0.4}
-            step={0.01}
-            value={wallThickness}
-            onChange={(e) => setWallThickness(parseFloat(e.target.value))}
-            style={{ width: "100%" }}
-          />
-        </fieldset>
-
-        <fieldset
-          style={{
-            border: "1px solid #444",
-            borderRadius: "4px",
-            padding: "12px",
-          }}
-        >
-          <legend style={{ color: "#aaa", fontSize: "12px" }}>Roof</legend>
-
-          <label
-            style={{ display: "block", marginBottom: "8px", fontSize: "13px" }}
-          >
-            Thickness: {roofThickness.toFixed(2)}
-          </label>
-          <input
-            type="range"
-            min={0.1}
-            max={0.5}
-            step={0.01}
-            value={roofThickness}
-            onChange={(e) => setRoofThickness(parseFloat(e.target.value))}
-            style={{ width: "100%" }}
-          />
-
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              marginTop: "12px",
-              fontSize: "13px",
-            }}
-          >
-            Overhang: {roofOverhang.toFixed(2)}
-          </label>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={roofOverhang}
-            onChange={(e) => setRoofOverhang(parseFloat(e.target.value))}
-            style={{ width: "100%" }}
-          />
-        </fieldset>
-
-        <fieldset
-          style={{
-            border: "1px solid #444",
-            borderRadius: "4px",
-            padding: "12px",
-          }}
-        >
-          <legend style={{ color: "#aaa", fontSize: "12px" }}>Windows</legend>
-
-          <label
-            style={{ display: "block", marginBottom: "8px", fontSize: "13px" }}
-          >
-            Width: {windowWidth.toFixed(2)}
-          </label>
-          <input
-            type="range"
-            min={0.2}
-            max={1.5}
-            step={0.05}
-            value={windowWidth}
-            onChange={(e) => setWindowWidth(parseFloat(e.target.value))}
-            style={{ width: "100%" }}
-          />
-
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              marginTop: "12px",
-              fontSize: "13px",
-            }}
-          >
-            Height: {windowHeight.toFixed(2)}
-          </label>
-          <input
-            type="range"
-            min={0.2}
-            max={1.5}
-            step={0.05}
-            value={windowHeight}
-            onChange={(e) => setWindowHeight(parseFloat(e.target.value))}
-            style={{ width: "100%" }}
-          />
-
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              marginTop: "12px",
-              fontSize: "13px",
-            }}
-          >
-            Spacing: {windowSpacing.toFixed(2)}
-          </label>
-          <input
-            type="range"
-            min={0.1}
-            max={1.5}
-            step={0.05}
-            value={windowSpacing}
-            onChange={(e) => setWindowSpacing(parseFloat(e.target.value))}
-            style={{ width: "100%" }}
-          />
-
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              marginTop: "12px",
-              fontSize: "13px",
-            }}
-          >
-            Sill Height: {windowSillHeight.toFixed(2)}
-          </label>
-          <input
-            type="range"
-            min={0.1}
-            max={1.0}
-            step={0.05}
-            value={windowSillHeight}
-            onChange={(e) => setWindowSillHeight(parseFloat(e.target.value))}
-            style={{ width: "100%" }}
-          />
-        </fieldset>
 
         <fieldset
           style={{
@@ -377,7 +111,7 @@ function App() {
               fontSize: "13px",
             }}
           >
-            {drawToolActive ? "Drawing (Esc to cancel)" : "Draw Polygon"}
+            {drawToolActive ? "Drawing (Esc to cancel)" : "Draw Building"}
           </button>
         </fieldset>
 
@@ -394,7 +128,7 @@ function App() {
           <directionalLight position={[10, 10, 10]} intensity={1} />
           <directionalLight position={[-10, -10, -10]} intensity={0.3} />
 
-          <CsgScene tree={tree} />
+          {tree && <CsgScene tree={tree} />}
 
           <DrawTool active={drawToolActive} onComplete={handleDrawComplete} />
 

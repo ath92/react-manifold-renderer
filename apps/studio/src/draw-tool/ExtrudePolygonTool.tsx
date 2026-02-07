@@ -4,12 +4,12 @@ import { useThree } from "@react-three/fiber";
 import type { Mesh } from "manifold-3d";
 import {
   CsgRoot,
-  Extrude,
   Rotate,
-  Translate,
   meshToGeometry,
 } from "@manifold-studio/react-manifold";
 import type { CsgTreeNode } from "../types/CsgTree";
+import { CsgTreeRenderer } from "../components/CsgTreeRenderer";
+import { buildBuilding } from "../building-components/Building";
 
 // ─── Geometry Helpers ────────────────────────────────────────────────────────
 
@@ -196,9 +196,24 @@ function PolygonLines({
   );
 }
 
-// ─── Extruded Mesh Preview ───────────────────────────────────────────────────
+// ─── Default building parameters ─────────────────────────────────────────────
 
-function ExtrudedPreview({
+const DEFAULT_FLOOR_THICKNESS = 0.15;
+const DEFAULT_WALL_HEIGHT = 1.2;
+const DEFAULT_WALL_THICKNESS = 0.12;
+const DEFAULT_ROOF_THICKNESS = 0.2;
+const DEFAULT_ROOF_OVERHANG = 0.3;
+const DEFAULT_WINDOW_CONFIG = {
+  width: 0.6,
+  height: 0.7,
+  spacing: 0.5,
+  sillHeight: 0.3,
+};
+const LEVEL_HEIGHT = DEFAULT_FLOOR_THICKNESS + DEFAULT_WALL_HEIGHT;
+
+// ─── Building Mesh Preview ───────────────────────────────────────────────────
+
+function BuildingPreview({
   polygon,
   height,
 }: {
@@ -215,33 +230,39 @@ function ExtrudedPreview({
     });
   }, []);
 
-  const absHeight = Math.abs(height);
+  // Convert height to number of levels (at least 1)
+  const levels = Math.max(1, Math.round(Math.abs(height) / LEVEL_HEIGHT));
 
   // The polygon stores [x, z] in Three.js world space (XZ ground plane).
-  // CSG Extrude interprets the polygon as XY and extrudes along Z.
-  // Rotate x={-90} maps CSG (X, Y, Z) → Three.js (X, Z, -Y).
-  // So we negate the second coordinate so that after the -Y negation
-  // the Z values come out correct. We also reverse winding order
-  // to compensate for the coordinate flip.
+  // CSG building uses XY polygon, so negate second coord and reverse winding.
   const csgPolygon = useMemo<Vec2[]>(
     () => polygon.map(([x, z]) => [x, -z] as Vec2).reverse(),
     [polygon],
   );
 
+  const buildingTree = useMemo(
+    () =>
+      buildBuilding({
+        polygon: csgPolygon,
+        levels,
+        floorThickness: DEFAULT_FLOOR_THICKNESS,
+        wallHeight: DEFAULT_WALL_HEIGHT,
+        wallThickness: DEFAULT_WALL_THICKNESS,
+        roofThickness: DEFAULT_ROOF_THICKNESS,
+        roofOverhang: DEFAULT_ROOF_OVERHANG,
+        windows: DEFAULT_WINDOW_CONFIG,
+      }),
+    [csgPolygon, levels],
+  );
+
   // Don't render if height is near zero or polygon is degenerate
-  if (absHeight < 0.001 || polygon.length < 3) return null;
+  if (Math.abs(height) < 0.001 || polygon.length < 3) return null;
 
   return (
     <>
       <CsgRoot onMesh={handleMesh}>
         <Rotate x={-90}>
-          {height >= 0 ? (
-            <Extrude polygon={csgPolygon} height={absHeight} />
-          ) : (
-            <Translate z={-absHeight}>
-              <Extrude polygon={csgPolygon} height={absHeight} />
-            </Translate>
-          )}
+          <CsgTreeRenderer node={buildingTree} />
         </Rotate>
       </CsgRoot>
       {geometry && (
@@ -263,23 +284,21 @@ function ExtrudedPreview({
 
 type Phase = "drawing" | "extruding" | "idle";
 
-/** Convert XZ ground-plane polygon + height into a CSG tree node. */
-function buildExtrudeNode(polygon: Vec2[], height: number): CsgTreeNode {
-  // The polygon is [x, z] in Three.js world space (XZ ground plane).
-  // CSG Extrude interprets polygon as XY and extrudes along Z.
-  // The scene applies Rotate x={-90} mapping CSG (X,Y,Z) → Three.js (X,Z,-Y).
-  // Negate second coord and reverse winding to compensate.
+/** Convert XZ ground-plane polygon + height into a building CSG tree node. */
+function buildBuildingNode(polygon: Vec2[], height: number): CsgTreeNode {
   const csgPolygon = polygon.map(([x, z]) => [x, -z] as Vec2).reverse();
-  const absHeight = Math.abs(height);
-  const extrudeNode: CsgTreeNode = {
-    type: "extrude",
+  const levels = Math.max(1, Math.round(Math.abs(height) / LEVEL_HEIGHT));
+
+  return buildBuilding({
     polygon: csgPolygon,
-    height: absHeight,
-  };
-  if (height < 0) {
-    return { type: "translate", z: -absHeight, children: [extrudeNode] };
-  }
-  return extrudeNode;
+    levels,
+    floorThickness: DEFAULT_FLOOR_THICKNESS,
+    wallHeight: DEFAULT_WALL_HEIGHT,
+    wallThickness: DEFAULT_WALL_THICKNESS,
+    roofThickness: DEFAULT_ROOF_THICKNESS,
+    roofOverhang: DEFAULT_ROOF_OVERHANG,
+    windows: DEFAULT_WINDOW_CONFIG,
+  });
 }
 
 export function DrawTool({
@@ -384,7 +403,7 @@ export function DrawTool({
 
       // Confirm extrusion on click
       if (Math.abs(extrudeHeight) > 0.001) {
-        onComplete?.(buildExtrudeNode(vertices, extrudeHeight));
+        onComplete?.(buildBuildingNode(vertices, extrudeHeight));
         setPhase("idle");
         setVertices([]);
         setExtrudeHeight(0);
@@ -476,9 +495,9 @@ export function DrawTool({
         <PolygonLines vertices={vertices} closed={phase === "extruding"} />
       )}
 
-      {/* 3D extruded preview */}
+      {/* 3D building preview */}
       {phase === "extruding" && (
-        <ExtrudedPreview polygon={vertices} height={extrudeHeight} />
+        <BuildingPreview polygon={vertices} height={extrudeHeight} />
       )}
     </group>
   );
