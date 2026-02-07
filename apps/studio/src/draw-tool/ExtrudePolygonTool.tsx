@@ -9,6 +9,7 @@ import {
   Translate,
   meshToGeometry,
 } from "@manifold-studio/react-manifold";
+import type { CsgTreeNode } from "../types/CsgTree";
 
 // ─── Geometry Helpers ────────────────────────────────────────────────────────
 
@@ -188,6 +189,7 @@ function PolygonLines({
   if (!geometry) return null;
 
   return (
+    // @ts-expect-error R3F <line> conflicts with SVG line type
     <line geometry={geometry}>
       <lineBasicMaterial color="#4fc3f7" linewidth={2} depthTest={false} />
     </line>
@@ -206,7 +208,7 @@ function ExtrudedPreview({
   const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
 
   const handleMesh = useCallback((mesh: Mesh) => {
-    const newGeom = meshToGeometry(mesh);
+    const newGeom = meshToGeometry(mesh) as unknown as THREE.BufferGeometry;
     setGeometry((prev) => {
       prev?.dispose();
       return newGeom;
@@ -261,7 +263,32 @@ function ExtrudedPreview({
 
 type Phase = "drawing" | "extruding" | "idle";
 
-export function DrawTool({ active }: { active: boolean }) {
+/** Convert XZ ground-plane polygon + height into a CSG tree node. */
+function buildExtrudeNode(polygon: Vec2[], height: number): CsgTreeNode {
+  // The polygon is [x, z] in Three.js world space (XZ ground plane).
+  // CSG Extrude interprets polygon as XY and extrudes along Z.
+  // The scene applies Rotate x={-90} mapping CSG (X,Y,Z) → Three.js (X,Z,-Y).
+  // Negate second coord and reverse winding to compensate.
+  const csgPolygon = polygon.map(([x, z]) => [x, -z] as Vec2).reverse();
+  const absHeight = Math.abs(height);
+  const extrudeNode: CsgTreeNode = {
+    type: "extrude",
+    polygon: csgPolygon,
+    height: absHeight,
+  };
+  if (height < 0) {
+    return { type: "translate", z: -absHeight, children: [extrudeNode] };
+  }
+  return extrudeNode;
+}
+
+export function DrawTool({
+  active,
+  onComplete,
+}: {
+  active: boolean;
+  onComplete?: (node: CsgTreeNode) => void;
+}) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [vertices, setVertices] = useState<Vec2[]>([]);
   const [hoverNearFirst, setHoverNearFirst] = useState(false);
@@ -357,8 +384,7 @@ export function DrawTool({ active }: { active: boolean }) {
 
       // Confirm extrusion on click
       if (Math.abs(extrudeHeight) > 0.001) {
-        // Lock in the extrusion — reset for next shape
-        // (The parent can read the result via onComplete callback if desired)
+        onComplete?.(buildExtrudeNode(vertices, extrudeHeight));
         setPhase("idle");
         setVertices([]);
         setExtrudeHeight(0);
@@ -366,7 +392,7 @@ export function DrawTool({ active }: { active: boolean }) {
       }
       void e;
     },
-    [active, phase, extrudeHeight],
+    [active, phase, extrudeHeight, vertices, onComplete],
   );
 
   // ── Keyboard: Enter to close polygon ──

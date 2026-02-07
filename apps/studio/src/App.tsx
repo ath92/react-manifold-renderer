@@ -8,35 +8,19 @@ import {
   meshToGeometry,
 } from "@manifold-studio/react-manifold";
 import type { Polygon, WindowConfig } from "./types/BuildingTypes";
-import { Building } from "./building-components/Building";
+import type { CsgTreeNode } from "./types/CsgTree";
+import { buildBuilding } from "./building-components/Building";
+import { CsgTreeRenderer } from "./components/CsgTreeRenderer";
 import { DrawTool } from "./draw-tool/ExtrudePolygonTool";
 
 // ─── CSG Scene ───────────────────────────────────────────────────────────────
 
-function BuildingScene({
-  polygon,
-  levels,
-  floorThickness,
-  wallHeight,
-  wallThickness,
-  roofThickness,
-  roofOverhang,
-  windowConfig,
-}: {
-  polygon: Polygon;
-  levels: number;
-  floorThickness: number;
-  wallHeight: number;
-  wallThickness: number;
-  roofThickness: number;
-  roofOverhang: number;
-  windowConfig: WindowConfig;
-}) {
+function CsgScene({ tree }: { tree: CsgTreeNode }) {
   const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const handleMesh = useCallback((mesh: Mesh) => {
-    const newGeometry = meshToGeometry(mesh);
+    const newGeometry = meshToGeometry(mesh) as unknown as THREE.BufferGeometry;
     setGeometry((prev) => {
       prev?.dispose();
       return newGeometry;
@@ -54,16 +38,7 @@ function BuildingScene({
       <CsgRoot onMesh={handleMesh} onError={handleError}>
         {/* Rotate so Z-up (extrude direction) becomes Y-up for Three.js */}
         <Rotate x={-90}>
-          <Building
-            polygon={polygon}
-            levels={levels}
-            floorThickness={floorThickness}
-            wallHeight={wallHeight}
-            wallThickness={wallThickness}
-            roofThickness={roofThickness}
-            roofOverhang={roofOverhang}
-            windows={windowConfig}
-          />
+          <CsgTreeRenderer node={tree} />
         </Rotate>
       </CsgRoot>
       {error && (
@@ -73,7 +48,8 @@ function BuildingScene({
         </mesh>
       )}
       {geometry && (
-        <mesh geometry={geometry}>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        <mesh geometry={geometry as any}>
           <meshStandardMaterial color="#e8d4b8" flatShading />
         </mesh>
       )}
@@ -102,6 +78,7 @@ function App() {
   const [windowHeight, setWindowHeight] = useState(0.7);
   const [windowSpacing, setWindowSpacing] = useState(0.5);
   const [windowSillHeight, setWindowSillHeight] = useState(0.3);
+  const [drawnShapes, setDrawnShapes] = useState<CsgTreeNode[]>([]);
 
   const windowConfig = useMemo<WindowConfig>(
     () => ({
@@ -112,6 +89,38 @@ function App() {
     }),
     [windowWidth, windowHeight, windowSpacing, windowSillHeight],
   );
+
+  const buildingTree = useMemo(
+    () =>
+      buildBuilding({
+        polygon: DEFAULT_POLYGON,
+        levels,
+        floorThickness,
+        wallHeight,
+        wallThickness,
+        roofThickness,
+        roofOverhang,
+        windows: windowConfig,
+      }),
+    [
+      levels,
+      floorThickness,
+      wallHeight,
+      wallThickness,
+      roofThickness,
+      roofOverhang,
+      windowConfig,
+    ],
+  );
+
+  const tree = useMemo<CsgTreeNode>(() => {
+    if (drawnShapes.length === 0) return buildingTree;
+    return { type: "union", children: [buildingTree, ...drawnShapes] };
+  }, [buildingTree, drawnShapes]);
+
+  const handleDrawComplete = useCallback((node: CsgTreeNode) => {
+    setDrawnShapes((prev) => [...prev, node]);
+  }, []);
 
   return (
     <div style={{ width: "100vw", height: "100vh", display: "flex" }}>
@@ -385,18 +394,9 @@ function App() {
           <directionalLight position={[10, 10, 10]} intensity={1} />
           <directionalLight position={[-10, -10, -10]} intensity={0.3} />
 
-          <BuildingScene
-            polygon={DEFAULT_POLYGON}
-            levels={levels}
-            floorThickness={floorThickness}
-            wallHeight={wallHeight}
-            wallThickness={wallThickness}
-            roofThickness={roofThickness}
-            roofOverhang={roofOverhang}
-            windowConfig={windowConfig}
-          />
+          <CsgScene tree={tree} />
 
-          <DrawTool active={drawToolActive} />
+          <DrawTool active={drawToolActive} onComplete={handleDrawComplete} />
 
           <gridHelper args={[20, 20, "#444", "#333"]} />
           <OrbitControls makeDefault enabled={!drawToolActive} />
