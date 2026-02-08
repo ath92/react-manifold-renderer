@@ -4,19 +4,18 @@
 // Sync connection to the Cloudflare Workers backend via WebSocket.
 
 import { useSyncExternalStore, useCallback } from "react";
-import { LoroDoc, LoroList } from "loro-crdt";
+import { LoroDoc } from "loro-crdt";
 import type { CsgTreeNode } from "./types/CsgTree";
 
 // ─── Singleton Doc ──────────────────────────────────────────────────────────
 
 const doc = new LoroDoc();
 
-// Initialize top-level containers
+// Root-level containers — these have stable identity across all peers.
+// Do NOT write initial values here; defaults are handled in the getters
+// via ?? operators. Writing here would overwrite state imported from sync.
 const state = doc.getMap("state");
-state.set("selectedId", null);
-state.set("drawToolActive", false);
-const shapesList = state.setContainer("shapes", new LoroList());
-doc.commit();
+const shapesList = doc.getList("shapes");
 
 // ─── Subscription plumbing ──────────────────────────────────────────────────
 
@@ -125,17 +124,17 @@ const TAG_S_PEER_ID = 0x84;
 
 const SYNC_BASE_URL = import.meta.env.VITE_SYNC_URL as string | undefined;
 
-function getDocId(): string {
-  // Use ?doc=<id> query param, or fall back to "default"
+function getRoomId(): string {
+  // Use ?room=<id> query param, or fall back to "default"
   const params = new URLSearchParams(window.location.search);
-  return params.get("doc") ?? "default";
+  return params.get("room") ?? "default";
 }
 
-async function connectSync(baseUrl: string, docId: string): Promise<void> {
+async function connectSync(baseUrl: string, roomId: string): Promise<void> {
   // 1. Fetch snapshot over HTTP
   console.log("[sync] fetching snapshot via HTTP");
   try {
-    const res = await fetch(`${baseUrl}/docs/${docId}/snapshot`);
+    const res = await fetch(`${baseUrl}/rooms/${roomId}/snapshot`);
     if (res.ok) {
       const snapshot = new Uint8Array(await res.arrayBuffer());
       if (snapshot.length > 0) {
@@ -154,7 +153,7 @@ async function connectSync(baseUrl: string, docId: string): Promise<void> {
   }
 
   // 2. Open WebSocket for incremental sync
-  const wsUrl = baseUrl.replace(/^http/, "ws") + `/docs/${docId}/ws`;
+  const wsUrl = baseUrl.replace(/^http/, "ws") + `/rooms/${roomId}/ws`;
   console.log(`[sync] opening WebSocket to ${wsUrl}`);
   const ws = new WebSocket(wsUrl);
   ws.binaryType = "arraybuffer";
@@ -223,7 +222,7 @@ async function connectSync(baseUrl: string, docId: string): Promise<void> {
     // Reconnect after a delay
     setTimeout(() => {
       console.log("[sync] reconnecting...");
-      connectSync(baseUrl, docId);
+      connectSync(baseUrl, roomId);
     }, 3000);
   };
 
@@ -235,9 +234,9 @@ async function connectSync(baseUrl: string, docId: string): Promise<void> {
 // ─── Auto-connect ───────────────────────────────────────────────────────────
 
 if (SYNC_BASE_URL) {
-  const docId = getDocId();
-  console.log(`[sync] sync enabled — doc="${docId}", url="${SYNC_BASE_URL}"`);
-  connectSync(SYNC_BASE_URL, docId);
+  const roomId = getRoomId();
+  console.log(`[sync] sync enabled — room="${roomId}", url="${SYNC_BASE_URL}"`);
+  connectSync(SYNC_BASE_URL, roomId);
 } else {
   console.log("[sync] no VITE_SYNC_URL set, running offline");
 }
