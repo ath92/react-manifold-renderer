@@ -2,6 +2,7 @@
 
 import type { Polygon, WindowConfig } from "../types/BuildingTypes";
 import type { CsgTreeNode } from "../types/CsgTree";
+import { genId } from "../types/CsgTree";
 import { buildLevel } from "./Level";
 import { buildRoof } from "./Roof";
 
@@ -29,6 +30,7 @@ export function buildBuilding({
   const levelNodes: CsgTreeNode[] = [];
   for (let i = 0; i < levels; i++) {
     levelNodes.push({
+      id: genId(),
       type: "translate",
       z: i * levelHeight,
       children: [
@@ -44,10 +46,13 @@ export function buildBuilding({
   }
 
   return {
+    id: genId(),
     type: "union",
+    name: "building",
     children: [
       ...levelNodes,
       {
+        id: genId(),
         type: "translate",
         z: levels * levelHeight,
         children: [

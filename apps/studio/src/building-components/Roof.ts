@@ -3,6 +3,7 @@
 
 import type { Polygon } from "../types/BuildingTypes";
 import type { CsgTreeNode } from "../types/CsgTree";
+import { genId } from "../types/CsgTree";
 
 function expandPolygon(polygon: Polygon, overhang: number): Polygon {
   const cx = polygon.reduce((s, p) => s + p[0], 0) / polygon.length;
@@ -27,5 +28,5 @@ export function buildRoof({
   overhang: number;
 }): CsgTreeNode {
   const expanded = expandPolygon(polygon, overhang);
-  return { type: 'extrude', polygon: expanded, height: thickness };
+  return { id: genId(), type: 'extrude', polygon: expanded, height: thickness };
 }

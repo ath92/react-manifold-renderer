@@ -1,11 +1,15 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import wasm from "vite-plugin-wasm";
+import topLevelAwait from "vite-plugin-top-level-await";
 import { viteStaticCopy } from "vite-plugin-static-copy";
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
     react(),
+    wasm(),
+    topLevelAwait(),
     viteStaticCopy({
       targets: [
         {
@@ -19,7 +23,7 @@ export default defineConfig({
     dedupe: ["react", "react-dom", "three"],
   },
   optimizeDeps: {
-    exclude: ["manifold-3d"],
+    exclude: ["manifold-3d", "loro-crdt"],
     include: ["@manifold-studio/react-manifold > react-reconciler"],
   },
   build: {

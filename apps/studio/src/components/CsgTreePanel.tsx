@@ -32,12 +32,17 @@ const INDENT_PX = 16;
 function CsgTreeNodeRow({
   node,
   depth,
+  selectedId,
+  onSelect,
 }: {
   node: CsgTreeNode;
   depth: number;
+  selectedId?: string | null;
+  onSelect?: (node: CsgTreeNode) => void;
 }) {
   const isParent = hasChildren(node);
   const [expanded, setExpanded] = useState(depth < DEFAULT_EXPAND_DEPTH);
+  const isSelected = node.id === selectedId;
 
   return (
     <div>
@@ -49,12 +54,31 @@ function CsgTreeNodeRow({
           whiteSpace: "nowrap",
           overflow: "hidden",
           textOverflow: "ellipsis",
-          cursor: isParent ? "pointer" : "default",
+          cursor: "pointer",
           userSelect: "none",
+          backgroundColor: isSelected ? "#3a3a3a" : "transparent",
+          display: "flex",
+          alignItems: "center",
         }}
-        onClick={isParent ? () => setExpanded((v) => !v) : undefined}
+        onClick={() => onSelect?.(node)}
       >
-        <span style={{ color: "#888", marginRight: 6, fontSize: "10px" }}>
+        <span
+          style={{
+            color: "#888",
+            marginRight: 6,
+            fontSize: "10px",
+            width: "12px",
+            display: "inline-block",
+            textAlign: "center",
+            cursor: isParent ? "pointer" : "default",
+          }}
+          onClick={(e) => {
+            if (isParent) {
+              e.stopPropagation();
+              setExpanded((v) => !v);
+            }
+          }}
+        >
           {isParent ? (expanded ? "\u25BC" : "\u25B6") : "\u2022"}
         </span>
         <span
@@ -63,13 +87,19 @@ function CsgTreeNodeRow({
             color: getTypeColor(node.type),
           }}
         >
-          {node.type}
+          {"name" in node && node.name ? node.name : node.type}
         </span>
       </div>
       {isParent &&
         expanded &&
         node.children.map((child, i) => (
-          <CsgTreeNodeRow key={i} node={child} depth={depth + 1} />
+          <CsgTreeNodeRow
+            key={child.id ?? i}
+            node={child}
+            depth={depth + 1}
+            selectedId={selectedId}
+            onSelect={onSelect}
+          />
         ))}
     </div>
   );
@@ -77,7 +107,15 @@ function CsgTreeNodeRow({
 
 // ─── Panel ───────────────────────────────────────────────────────────────────
 
-export function CsgTreePanel({ tree }: { tree: CsgTreeNode }) {
+export function CsgTreePanel({
+  tree,
+  selectedId,
+  onSelect,
+}: {
+  tree: CsgTreeNode;
+  selectedId?: string | null;
+  onSelect?: (node: CsgTreeNode) => void;
+}) {
   return (
     <fieldset
       style={{
@@ -89,7 +127,12 @@ export function CsgTreePanel({ tree }: { tree: CsgTreeNode }) {
       }}
     >
       <legend style={{ color: "#aaa", fontSize: "12px" }}>CSG Tree</legend>
-      <CsgTreeNodeRow node={tree} depth={0} />
+      <CsgTreeNodeRow
+        node={tree}
+        depth={0}
+        selectedId={selectedId}
+        onSelect={onSelect}
+      />
     </fieldset>
   );
 }

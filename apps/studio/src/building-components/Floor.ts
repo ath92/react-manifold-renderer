@@ -3,6 +3,7 @@
 
 import type { Polygon } from "../types/BuildingTypes";
 import type { CsgTreeNode } from "../types/CsgTree";
+import { genId } from "../types/CsgTree";
 
 export function buildFloor({
   polygon,
@@ -11,5 +12,5 @@ export function buildFloor({
   polygon: Polygon;
   thickness: number;
 }): CsgTreeNode {
-  return { type: 'extrude', polygon, height: thickness };
+  return { id: genId(), type: 'extrude', polygon, height: thickness };
 }

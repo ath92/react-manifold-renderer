@@ -3,6 +3,7 @@
 
 import type { WindowConfig } from "../types/BuildingTypes";
 import type { CsgTreeNode } from "../types/CsgTree";
+import { genId } from "../types/CsgTree";
 
 function buildWindowCutout({
   width,
@@ -18,12 +19,13 @@ function buildWindowCutout({
   offsetZ: number;
 }): CsgTreeNode {
   return {
+    id: genId(),
     type: 'translate',
     x: offsetX,
     y: 0,
     z: offsetZ,
     children: [
-      { type: 'cube', size: [width, thickness * 3, height], center: false },
+      { id: genId(), type: 'cube', size: [width, thickness * 3, height], center: false },
     ],
   };
 }
@@ -39,7 +41,7 @@ export function buildWall({
   thickness: number;
   windows?: WindowConfig;
 }): CsgTreeNode {
-  const wallCube: CsgTreeNode = { type: 'cube', size: [length, thickness, height], center: false };
+  const wallCube: CsgTreeNode = { id: genId(), type: 'cube', size: [length, thickness, height], center: false };
 
   if (!windowConfig) return wallCube;
 
@@ -69,6 +71,7 @@ export function buildWall({
   }
 
   return {
+    id: genId(),
     type: 'difference',
     children: [wallCube, ...cutouts],
   };

@@ -301,12 +301,14 @@ function buildBuildingNode(polygon: Vec2[], height: number): CsgTreeNode {
   });
 }
 
-export function DrawTool({
+export function DrawBuildingTool({
   active,
   onComplete,
+  onDeactivate,
 }: {
   active: boolean;
   onComplete?: (node: CsgTreeNode) => void;
+  onDeactivate?: () => void;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
   const [vertices, setVertices] = useState<Vec2[]>([]);
@@ -408,10 +410,11 @@ export function DrawTool({
         setVertices([]);
         setExtrudeHeight(0);
         firstVertexRef.current = null;
+        onDeactivate?.();
       }
       void e;
     },
-    [active, phase, extrudeHeight, vertices, onComplete],
+    [active, phase, extrudeHeight, vertices, onComplete, onDeactivate],
   );
 
   // ── Keyboard: Enter to close polygon ──

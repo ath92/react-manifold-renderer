@@ -2,22 +2,32 @@
 // JSON-serializable data structure representing a CSG tree.
 // Maps 1:1 to the CSG React components in @manifold-studio/react-manifold.
 
+// --- Base mixin (every node gets an id) ---
+
+export interface CsgNodeBase {
+  id: string;
+}
+
+export function genId(): string {
+  return crypto.randomUUID();
+}
+
 // --- Primitives (no children) ---
 
-export interface CsgCubeNode {
-  type: 'cube';
+export interface CsgCubeNode extends CsgNodeBase {
+  type: "cube";
   size?: number | [number, number, number];
   center?: boolean;
 }
 
-export interface CsgSphereNode {
-  type: 'sphere';
+export interface CsgSphereNode extends CsgNodeBase {
+  type: "sphere";
   radius?: number;
   segments?: number;
 }
 
-export interface CsgCylinderNode {
-  type: 'cylinder';
+export interface CsgCylinderNode extends CsgNodeBase {
+  type: "cylinder";
   radius?: number;
   radiusLow?: number;
   radiusHigh?: number;
@@ -26,49 +36,53 @@ export interface CsgCylinderNode {
   center?: boolean;
 }
 
-export interface CsgExtrudeNode {
-  type: 'extrude';
+export interface CsgExtrudeNode extends CsgNodeBase {
+  type: "extrude";
   polygon: [number, number][];
   height?: number;
 }
 
 // --- Boolean Operations ---
 
-export interface CsgUnionNode {
-  type: 'union';
+export interface CsgUnionNode extends CsgNodeBase {
+  type: "union";
   children: CsgTreeNode[];
 }
 
-export interface CsgDifferenceNode {
-  type: 'difference';
+export interface CsgDifferenceNode extends CsgNodeBase {
+  type: "difference";
   children: CsgTreeNode[];
 }
 
-export interface CsgIntersectionNode {
-  type: 'intersection';
+export interface CsgIntersectionNode extends CsgNodeBase {
+  type: "intersection";
   children: CsgTreeNode[];
+}
+
+export interface CsgNodeName {
+  name?: string;
 }
 
 // --- Transforms ---
 
-export interface CsgTranslateNode {
-  type: 'translate';
+export interface CsgTranslateNode extends CsgNodeBase {
+  type: "translate";
   x?: number;
   y?: number;
   z?: number;
   children: CsgTreeNode[];
 }
 
-export interface CsgRotateNode {
-  type: 'rotate';
+export interface CsgRotateNode extends CsgNodeBase {
+  type: "rotate";
   x?: number;
   y?: number;
   z?: number;
   children: CsgTreeNode[];
 }
 
-export interface CsgScaleNode {
-  type: 'scale';
+export interface CsgScaleNode extends CsgNodeBase {
+  type: "scale";
   x?: number;
   y?: number;
   z?: number;
@@ -77,15 +91,24 @@ export interface CsgScaleNode {
 
 // --- Group ---
 
-export interface CsgGroupNode {
-  type: 'group';
+export interface CsgGroupNode extends CsgNodeBase {
+  type: "group";
   children: CsgTreeNode[];
 }
 
 // --- Discriminated Union ---
 
-export type CsgPrimitiveNode = CsgCubeNode | CsgSphereNode | CsgCylinderNode | CsgExtrudeNode;
-export type CsgBooleanNode = CsgUnionNode | CsgDifferenceNode | CsgIntersectionNode;
+export type CsgPrimitiveNode =
+  | CsgCubeNode
+  | CsgSphereNode
+  | CsgCylinderNode
+  | CsgExtrudeNode;
+export type CsgBooleanNode = (
+  | CsgUnionNode
+  | CsgDifferenceNode
+  | CsgIntersectionNode
+) &
+  CsgNodeName;
 export type CsgTransformNode = CsgTranslateNode | CsgRotateNode | CsgScaleNode;
 export type CsgParentNode = CsgBooleanNode | CsgTransformNode | CsgGroupNode;
 
@@ -96,5 +119,5 @@ export type CsgTreeNode =
   | CsgGroupNode;
 
 export function hasChildren(node: CsgTreeNode): node is CsgParentNode {
-  return 'children' in node;
+  return "children" in node;
 }

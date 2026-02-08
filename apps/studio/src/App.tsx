@@ -8,15 +8,34 @@ import {
   meshToGeometry,
 } from "@manifold-studio/react-manifold";
 import type { CsgTreeNode } from "./types/CsgTree";
+import { genId } from "./types/CsgTree";
 import { CsgTreeRenderer } from "./components/CsgTreeRenderer";
 import { CsgTreePanel } from "./components/CsgTreePanel";
-import { DrawTool } from "./draw-tool/ExtrudePolygonTool";
+import { DrawBuildingTool } from "./tools/DrawBuildingTool";
+import {
+  useSelectedId,
+  useSetSelectedId,
+  useShapes,
+  useAddShape,
+  useDrawToolActive,
+  useSetDrawToolActive,
+} from "./store";
 
 // ─── CSG Scene ───────────────────────────────────────────────────────────────
 
-function CsgScene({ tree }: { tree: CsgTreeNode }) {
+function CsgScene({
+  tree,
+  shapeId,
+  onSelect,
+}: {
+  tree: CsgTreeNode;
+  shapeId: string;
+  onSelect?: () => void;
+}) {
   const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const selectedId = useSelectedId();
+  const isSelected = shapeId === selectedId;
 
   const handleMesh = useCallback((mesh: Mesh) => {
     const newGeometry = meshToGeometry(mesh) as unknown as THREE.BufferGeometry;
@@ -47,9 +66,18 @@ function CsgScene({ tree }: { tree: CsgTreeNode }) {
         </mesh>
       )}
       {geometry && (
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        <mesh geometry={geometry as any}>
-          <meshStandardMaterial color="#e8d4b8" flatShading />
+        <mesh
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          geometry={geometry as any}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelect?.();
+          }}
+        >
+          <meshStandardMaterial
+            color={isSelected ? "#ff6b6b" : "#e8d4b8"}
+            flatShading
+          />
         </mesh>
       )}
     </>
@@ -59,18 +87,35 @@ function CsgScene({ tree }: { tree: CsgTreeNode }) {
 // ─── App ─────────────────────────────────────────────────────────────────────
 
 function App() {
-  const [drawToolActive, setDrawToolActive] = useState(false);
-  const [drawnShapes, setDrawnShapes] = useState<CsgTreeNode[]>([]);
+  const drawToolActive = useDrawToolActive();
+  const setDrawToolActive = useSetDrawToolActive();
+  const shapes = useShapes();
+  const addShape = useAddShape();
+  const selectedId = useSelectedId();
+  const setSelectedId = useSetSelectedId();
 
-  const tree = useMemo<CsgTreeNode | null>(() => {
-    if (drawnShapes.length === 0) return null;
-    if (drawnShapes.length === 1) return drawnShapes[0];
-    return { type: "union", children: drawnShapes };
-  }, [drawnShapes]);
+  // Construct a single tree for the whole scene (for CsgTreePanel)
+  const sceneTree = useMemo<CsgTreeNode>(() => {
+    return {
+      id: genId(),
+      type: "group",
+      children: shapes,
+    };
+  }, [shapes]);
 
-  const handleDrawComplete = useCallback((node: CsgTreeNode) => {
-    setDrawnShapes((prev) => [...prev, node]);
-  }, []);
+  const handleDrawComplete = useCallback(
+    (node: CsgTreeNode) => {
+      addShape(node);
+    },
+    [addShape],
+  );
+
+  const handleTreeSelect = useCallback(
+    (node: CsgTreeNode) => {
+      setSelectedId(node.id);
+    },
+    [setSelectedId],
+  );
 
   return (
     <div style={{ width: "100vw", height: "100vh", display: "flex" }}>
@@ -100,7 +145,7 @@ function App() {
         >
           <legend style={{ color: "#aaa", fontSize: "12px" }}>Tools</legend>
           <button
-            onClick={() => setDrawToolActive((v) => !v)}
+            onClick={() => setDrawToolActive(!drawToolActive)}
             style={{
               width: "100%",
               padding: "8px",
@@ -116,24 +161,44 @@ function App() {
           </button>
         </fieldset>
 
-        {tree && <CsgTreePanel tree={tree} />}
+        <CsgTreePanel
+          tree={sceneTree}
+          selectedId={selectedId}
+          onSelect={handleTreeSelect}
+        />
 
         <div style={{ marginTop: "auto", fontSize: "12px", color: "#666" }}>
           <p>Drag to rotate</p>
           <p>Scroll to zoom</p>
+          <p>Click building to select</p>
+          <p>Click background to deselect</p>
         </div>
       </div>
 
       <div style={{ flex: 1 }}>
-        <Canvas camera={{ position: [8, 6, 8], fov: 50 }}>
+        <Canvas
+          camera={{ position: [8, 6, 8], fov: 50 }}
+          onPointerMissed={() => setSelectedId(null)}
+        >
           <color attach="background" args={["#242424"]} />
           <ambientLight intensity={0.4} />
           <directionalLight position={[10, 10, 10]} intensity={1} />
           <directionalLight position={[-10, -10, -10]} intensity={0.3} />
 
-          {tree && <CsgScene tree={tree} />}
+          {shapes.map((shape) => (
+            <CsgScene
+              key={shape.id}
+              tree={shape}
+              shapeId={shape.id}
+              onSelect={() => setSelectedId(shape.id)}
+            />
+          ))}
 
-          <DrawTool active={drawToolActive} onComplete={handleDrawComplete} />
+          <DrawBuildingTool
+            active={drawToolActive}
+            onComplete={handleDrawComplete}
+            onDeactivate={() => setDrawToolActive(false)}
+          />
 
           <gridHelper args={[20, 20, "#444", "#333"]} />
           <OrbitControls makeDefault enabled={!drawToolActive} />
