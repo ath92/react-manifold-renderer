@@ -1,6 +1,7 @@
 // ─── Loro-backed Global State ────────────────────────────────────────────────
 // Singleton LoroDoc holding selectedId, shapes[], and drawToolActive.
 // React hooks via useSyncExternalStore.
+// Sync connection to the Cloudflare Workers backend via WebSocket.
 
 import { useSyncExternalStore, useCallback } from "react";
 import { LoroDoc, LoroList } from "loro-crdt";
@@ -108,4 +109,135 @@ export function useSetDrawToolActive(): (active: boolean) => void {
     state.set("drawToolActive", active);
     doc.commit();
   }, []);
+}
+
+// ─── Sync Protocol Tags ─────────────────────────────────────────────────────
+// Mirrors services/sync-worker/src/protocol.ts
+
+const TAG_C_UPDATE = 0x01;
+const TAG_C_VERSION_VECTOR = 0x03;
+
+const TAG_S_UPDATE = 0x81;
+const TAG_S_CATCHUP = 0x83;
+const TAG_S_PEER_ID = 0x84;
+
+// ─── Sync Connection ────────────────────────────────────────────────────────
+
+const SYNC_BASE_URL = import.meta.env.VITE_SYNC_URL as string | undefined;
+
+function getDocId(): string {
+  // Use ?doc=<id> query param, or fall back to "default"
+  const params = new URLSearchParams(window.location.search);
+  return params.get("doc") ?? "default";
+}
+
+async function connectSync(baseUrl: string, docId: string): Promise<void> {
+  // 1. Fetch snapshot over HTTP
+  console.log("[sync] fetching snapshot via HTTP");
+  try {
+    const res = await fetch(`${baseUrl}/docs/${docId}/snapshot`);
+    if (res.ok) {
+      const snapshot = new Uint8Array(await res.arrayBuffer());
+      if (snapshot.length > 0) {
+        doc.import(snapshot);
+        console.log(
+          `[sync] imported snapshot (${(snapshot.length / 1024).toFixed(1)} kB)`,
+        );
+      } else {
+        console.log("[sync] empty snapshot (new document)");
+      }
+    } else {
+      console.warn(`[sync] snapshot fetch failed: ${res.status}`);
+    }
+  } catch (e) {
+    console.warn("[sync] snapshot fetch error:", e);
+  }
+
+  // 2. Open WebSocket for incremental sync
+  const wsUrl = baseUrl.replace(/^http/, "ws") + `/docs/${docId}/ws`;
+  console.log(`[sync] opening WebSocket to ${wsUrl}`);
+  const ws = new WebSocket(wsUrl);
+  ws.binaryType = "arraybuffer";
+
+  let unsubLocalUpdates: (() => void) | null = null;
+
+  ws.onopen = () => {
+    console.log("[sync] WebSocket connected");
+
+    // Send our version vector so server can send catch-up
+    const vv = doc.version();
+    const vvBytes = vv.encode();
+    const msg = new Uint8Array(1 + vvBytes.length);
+    msg[0] = TAG_C_VERSION_VECTOR;
+    msg.set(vvBytes, 1);
+    ws.send(msg);
+    console.log("[sync] sent version vector for catch-up");
+
+    // Pipe local updates to server
+    unsubLocalUpdates = doc.subscribeLocalUpdates((bytes: Uint8Array) => {
+      if (ws.readyState !== WebSocket.OPEN) return;
+      const msg = new Uint8Array(1 + bytes.length);
+      msg[0] = TAG_C_UPDATE;
+      msg.set(bytes, 1);
+      ws.send(msg);
+      console.log(`[sync] sent local update (${bytes.length} B)`);
+    });
+  };
+
+  ws.onmessage = (event) => {
+    const data = new Uint8Array(event.data as ArrayBuffer);
+    if (data.length === 0) return;
+    const tag = data[0];
+    const payload = data.subarray(1);
+
+    switch (tag) {
+      case TAG_S_UPDATE:
+        console.log(
+          `[sync] received remote update (${payload.length} B) from server`,
+        );
+        if (payload.length > 0) doc.import(payload);
+        break;
+
+      case TAG_S_CATCHUP:
+        console.log(`[sync] received catch-up (${payload.length} B)`);
+        if (payload.length > 0) doc.import(payload);
+        break;
+
+      case TAG_S_PEER_ID: {
+        const view = new DataView(
+          payload.buffer,
+          payload.byteOffset,
+          payload.byteLength,
+        );
+        const peerId = view.getBigUint64(0);
+        doc.setPeerId(peerId);
+        console.log(`[sync] assigned peer ID: ${peerId}`);
+        break;
+      }
+    }
+  };
+
+  ws.onclose = (e) => {
+    console.log(`[sync] WebSocket closed (code=${e.code})`);
+    unsubLocalUpdates?.();
+    // Reconnect after a delay
+    setTimeout(() => {
+      console.log("[sync] reconnecting...");
+      connectSync(baseUrl, docId);
+    }, 3000);
+  };
+
+  ws.onerror = () => {
+    console.warn("[sync] WebSocket error");
+  };
+}
+
+// ─── Auto-connect ───────────────────────────────────────────────────────────
+
+if (SYNC_BASE_URL) {
+  const docId = getDocId();
+  console.log(`[sync] sync enabled — doc="${docId}", url="${SYNC_BASE_URL}"`);
+  connectSync(SYNC_BASE_URL, docId);
+} else {
+  console.log("[sync] no VITE_SYNC_URL set, running offline");
 }
