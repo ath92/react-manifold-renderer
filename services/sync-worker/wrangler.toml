@@ -1,0 +1,13 @@
+name = "manifold-sync"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[durable_objects]
+bindings = [
+  { name = "DOCUMENT_ROOM", class_name = "DocumentRoom" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["DocumentRoom"]
