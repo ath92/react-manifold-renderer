@@ -1,23 +1,45 @@
-// ─── Loro-backed Global State ────────────────────────────────────────────────
-// Singleton LoroDoc holding selectedId, shapes[], and drawToolActive.
-// React hooks via useSyncExternalStore.
+// ─── Global State ────────────────────────────────────────────────────────────
+// Synced state (shapes) lives in a Loro CRDT doc, exposed via useSyncExternalStore.
+// Local-only state (selection, draw tool) lives in a zustand store.
 // Sync connection to the Cloudflare Workers backend via WebSocket.
 
 import { useSyncExternalStore, useCallback } from "react";
+import { create } from "zustand";
 import { LoroDoc } from "loro-crdt";
 import type { CsgTreeNode } from "./types/CsgTree";
 
-// ─── Singleton Doc ──────────────────────────────────────────────────────────
+// ─── Local store (zustand, not synced) ──────────────────────────────────────
+
+interface LocalState {
+  selectedId: string | null;
+  drawToolActive: boolean;
+  setSelectedId: (id: string | null) => void;
+  setDrawToolActive: (active: boolean) => void;
+}
+
+export const useLocalStore = create<LocalState>((set) => ({
+  selectedId: null,
+  drawToolActive: false,
+  setSelectedId: (selectedId) => set({ selectedId }),
+  setDrawToolActive: (drawToolActive) => set({ drawToolActive }),
+}));
+
+export const useSelectedId = () => useLocalStore((s) => s.selectedId);
+export const useSetSelectedId = () => useLocalStore((s) => s.setSelectedId);
+export const useDrawToolActive = () => useLocalStore((s) => s.drawToolActive);
+export const useSetDrawToolActive = () =>
+  useLocalStore((s) => s.setDrawToolActive);
+
+// ─── Loro doc (synced state) ────────────────────────────────────────────────
 
 const doc = new LoroDoc();
 
 // Root-level containers — these have stable identity across all peers.
 // Do NOT write initial values here; defaults are handled in the getters
 // via ?? operators. Writing here would overwrite state imported from sync.
-const state = doc.getMap("state");
 const shapesList = doc.getList("shapes");
 
-// ─── Subscription plumbing ──────────────────────────────────────────────────
+// ─── Subscription plumbing for Loro → React ─────────────────────────────────
 
 type Listener = () => void;
 const listeners = new Set<Listener>();
@@ -43,50 +65,25 @@ doc.subscribe(() => {
 // value when the underlying data hasn't changed, otherwise React re-renders
 // infinitely.
 
-let cachedSelectedId: string | null = null;
 let cachedShapes: CsgTreeNode[] = [];
-let cachedDrawToolActive = false;
 
 function refreshCache() {
-  cachedSelectedId = (state.get("selectedId") as string | null) ?? null;
-
   const len = shapesList.length;
   const arr: CsgTreeNode[] = [];
   for (let i = 0; i < len; i++) {
     arr.push(shapesList.get(i) as CsgTreeNode);
   }
   cachedShapes = arr;
-
-  cachedDrawToolActive = (state.get("drawToolActive") as boolean) ?? false;
 }
 
 // Build initial cache
 refreshCache();
 
-function getSelectedId(): string | null {
-  return cachedSelectedId;
-}
-
 function getShapes(): CsgTreeNode[] {
   return cachedShapes;
 }
 
-function getDrawToolActive(): boolean {
-  return cachedDrawToolActive;
-}
-
-// ─── React Hooks ────────────────────────────────────────────────────────────
-
-export function useSelectedId(): string | null {
-  return useSyncExternalStore(subscribe, getSelectedId);
-}
-
-export function useSetSelectedId(): (id: string | null) => void {
-  return useCallback((id: string | null) => {
-    state.set("selectedId", id);
-    doc.commit();
-  }, []);
-}
+// ─── Synced React Hooks ─────────────────────────────────────────────────────
 
 export function useShapes(): CsgTreeNode[] {
   return useSyncExternalStore(subscribe, getShapes);
@@ -95,17 +92,6 @@ export function useShapes(): CsgTreeNode[] {
 export function useAddShape(): (node: CsgTreeNode) => void {
   return useCallback((node: CsgTreeNode) => {
     shapesList.push(node as unknown as Record<string, unknown>);
-    doc.commit();
-  }, []);
-}
-
-export function useDrawToolActive(): boolean {
-  return useSyncExternalStore(subscribe, getDrawToolActive);
-}
-
-export function useSetDrawToolActive(): (active: boolean) => void {
-  return useCallback((active: boolean) => {
-    state.set("drawToolActive", active);
     doc.commit();
   }, []);
 }
