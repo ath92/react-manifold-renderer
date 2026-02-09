@@ -121,3 +121,40 @@ export type CsgTreeNode =
 export function hasChildren(node: CsgTreeNode): node is CsgParentNode {
   return "children" in node;
 }
+
+/**
+ * Find a node by its id within a tree. Returns undefined if not found.
+ */
+export function findNodeById(
+  root: CsgTreeNode,
+  id: string,
+): CsgTreeNode | undefined {
+  if (root.id === id) return root;
+  if (hasChildren(root)) {
+    for (const child of root.children) {
+      const found = findNodeById(child, id);
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Collect all leaf primitive IDs that are descendants of a given node.
+ * If the node itself is a primitive, returns just its ID.
+ */
+export function getLeafPrimitiveIds(node: CsgTreeNode): Set<string> {
+  const ids = new Set<string>();
+  collectLeafIds(node, ids);
+  return ids;
+}
+
+function collectLeafIds(node: CsgTreeNode, ids: Set<string>): void {
+  if (hasChildren(node)) {
+    for (const child of node.children) {
+      collectLeafIds(child, ids);
+    }
+  } else {
+    ids.add(node.id);
+  }
+}

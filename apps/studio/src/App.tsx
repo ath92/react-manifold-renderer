@@ -1,14 +1,22 @@
-import { useState, useCallback, useMemo } from "react";
-import { Canvas } from "@react-three/fiber";
+import { useState, useCallback, useMemo, useRef, useEffect } from "react";
+import * as THREE from "three";
+import { Canvas, type ThreeEvent } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { Mesh } from "manifold-3d";
 import {
   CsgRoot,
   Rotate,
   meshToGeometry,
+  buildTriNodeIdMap,
+  updateSelectionAttribute,
+  nodeIdForFace,
+} from "@manifold-studio/react-manifold";
+import type {
+  OriginalIdMap,
+  TriNodeIdMap,
 } from "@manifold-studio/react-manifold";
 import type { CsgTreeNode } from "./types/CsgTree";
-import { genId } from "./types/CsgTree";
+import { genId, findNodeById, getLeafPrimitiveIds } from "./types/CsgTree";
 import { CsgTreeRenderer } from "./components/CsgTreeRenderer";
 import { CsgTreePanel } from "./components/CsgTreePanel";
 import { DrawBuildingTool } from "./tools/DrawBuildingTool";
@@ -21,24 +29,67 @@ import {
   useSetDrawToolActive,
 } from "./store";
 
+// ─── Selection highlight material ────────────────────────────────────────────
+
+const BASE_COLOR = new THREE.Color("#e8d4b8");
+const HIGHLIGHT_COLOR = new THREE.Color("#ff6b6b");
+
+function makeSelectionMaterial(): THREE.MeshStandardMaterial {
+  const mat = new THREE.MeshStandardMaterial({
+    color: BASE_COLOR,
+    flatShading: true,
+  });
+
+  mat.onBeforeCompile = (shader) => {
+    shader.vertexShader = shader.vertexShader.replace(
+      "void main() {",
+      `attribute float selected;
+varying float vSelected;
+void main() {
+  vSelected = selected;`,
+    );
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "void main() {",
+      `varying float vSelected;
+uniform vec3 highlightColor;
+void main() {`,
+    );
+
+    // Mix highlight color into diffuse after it's been set.
+    // step() avoids smooth interpolation bleed: only triangles where
+    // ALL vertices are selected (vSelected interpolates to ~1.0) highlight.
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <color_fragment>",
+      `#include <color_fragment>
+  float sel = step(0.99, vSelected);
+  diffuseColor.rgb = mix(diffuseColor.rgb, highlightColor, sel * 0.6);`,
+    );
+
+    shader.uniforms.highlightColor = { value: HIGHLIGHT_COLOR };
+  };
+
+  return mat;
+}
+
 // ─── CSG Scene ───────────────────────────────────────────────────────────────
 
-function CsgScene({
-  tree,
-  shapeId,
-  onSelect,
-}: {
-  tree: CsgTreeNode;
-  shapeId: string;
-  onSelect?: () => void;
-}) {
+function CsgScene({ tree }: { tree: CsgTreeNode }) {
   const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
   const [error, setError] = useState<string | null>(null);
   const selectedId = useSelectedId();
-  const isSelected = shapeId === selectedId;
+  const setSelectedId = useSetSelectedId();
+  const triNodeIdMapRef = useRef<TriNodeIdMap>([]);
+  const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
 
-  const handleMesh = useCallback((mesh: Mesh) => {
+  // Lazily create material (stable across renders)
+  if (!materialRef.current) {
+    materialRef.current = makeSelectionMaterial();
+  }
+
+  const handleMesh = useCallback((mesh: Mesh, idMap: OriginalIdMap) => {
     const newGeometry = meshToGeometry(mesh) as unknown as THREE.BufferGeometry;
+    triNodeIdMapRef.current = buildTriNodeIdMap(mesh, idMap);
     setGeometry((prev) => {
       prev?.dispose();
       return newGeometry;
@@ -50,6 +101,42 @@ function CsgScene({
     console.error("CSG Error:", err);
     setError(err.message);
   }, []);
+
+  const handleClick = useCallback(
+    (e: ThreeEvent<MouseEvent>) => {
+      e.stopPropagation();
+      if (e.faceIndex != null) {
+        const nodeId = nodeIdForFace(triNodeIdMapRef.current, e.faceIndex);
+        if (nodeId) {
+          setSelectedId(nodeId);
+          return;
+        }
+      }
+      // Fallback: select the top-level shape
+      setSelectedId(tree.id);
+    },
+    [tree.id, setSelectedId],
+  );
+
+  // Update selection attribute whenever selectedId or geometry changes
+  useEffect(() => {
+    if (!geometry) return;
+
+    let activeIds = new Set<string>();
+    if (selectedId) {
+      // Find the selected node within this shape's tree
+      const selectedNode = findNodeById(tree, selectedId);
+      if (selectedNode) {
+        activeIds = getLeafPrimitiveIds(selectedNode);
+      }
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    updateSelectionAttribute(
+      geometry as any,
+      triNodeIdMapRef.current,
+      activeIds,
+    );
+  }, [selectedId, geometry, tree]);
 
   return (
     <>
@@ -67,18 +154,10 @@ function CsgScene({
       )}
       {geometry && (
         <mesh
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          geometry={geometry as any}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect?.();
-          }}
-        >
-          <meshStandardMaterial
-            color={isSelected ? "#ff6b6b" : "#e8d4b8"}
-            flatShading
-          />
-        </mesh>
+          geometry={geometry as unknown as THREE.BufferGeometry}
+          material={materialRef.current!}
+          onClick={handleClick}
+        />
       )}
     </>
   );
@@ -186,12 +265,7 @@ function App() {
           <directionalLight position={[-10, -10, -10]} intensity={0.3} />
 
           {shapes.map((shape) => (
-            <CsgScene
-              key={shape.id}
-              tree={shape}
-              shapeId={shape.id}
-              onSelect={() => setSelectedId(shape.id)}
-            />
+            <CsgScene key={shape.id} tree={shape} />
           ))}
 
           <DrawBuildingTool

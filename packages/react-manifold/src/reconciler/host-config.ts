@@ -1,11 +1,11 @@
-import type { Mesh } from 'manifold-3d';
-import type { CsgNode, NodeType } from '../types';
-import { createNode, markDirty, disposeNode } from './nodes';
-import { buildGeometry } from './geometry-builder';
+import type { Mesh } from "manifold-3d";
+import type { CsgNode, NodeType } from "../types";
+import { createNode, markDirty, disposeNode } from "./nodes";
+import { buildGeometry, type OriginalIdMap } from "./geometry-builder";
 
 export interface Container {
   root: CsgNode | null;
-  onMesh: (mesh: Mesh) => void;
+  onMesh: (mesh: Mesh, idMap: OriginalIdMap) => void;
   onError?: (error: Error) => void;
 }
 
@@ -23,7 +23,7 @@ export const hostConfig: Record<string, any> = {
   },
 
   createTextInstance(): never {
-    throw new Error('Text nodes are not supported in CSG renderer');
+    throw new Error("Text nodes are not supported in CSG renderer");
   },
 
   // --- Tree Operations ---
@@ -66,7 +66,7 @@ export const hostConfig: Record<string, any> = {
     _instance: CsgNode,
     _type: string,
     oldProps: Record<string, unknown>,
-    newProps: Record<string, unknown>
+    newProps: Record<string, unknown>,
   ): boolean {
     return !propsEqual(oldProps, newProps);
   },
@@ -76,7 +76,7 @@ export const hostConfig: Record<string, any> = {
     _updatePayload: boolean,
     _type: string,
     _oldProps: Record<string, unknown>,
-    newProps: Record<string, unknown>
+    newProps: Record<string, unknown>,
   ): void {
     // Dispose old manifold before updating props
     if (instance.manifold) {
@@ -100,7 +100,11 @@ export const hostConfig: Record<string, any> = {
     disposeNode(child);
   },
 
-  insertInContainerBefore(container: Container, child: CsgNode, _beforeChild: CsgNode): void {
+  insertInContainerBefore(
+    container: Container,
+    child: CsgNode,
+    _beforeChild: CsgNode,
+  ): void {
     container.root = child;
     child.parent = null;
   },
@@ -121,12 +125,13 @@ export const hostConfig: Record<string, any> = {
     // Rebuild geometry after React commits all changes
     if (container.root && container.root.dirty) {
       try {
-        buildGeometry(container.root);
+        const idMap: OriginalIdMap = new Map();
+        buildGeometry(container.root, idMap);
 
         if (container.root.manifold) {
           const mesh = container.root.manifold.getMesh();
           // Defer callback to break synchronous update cycle
-          queueMicrotask(() => container.onMesh(mesh));
+          queueMicrotask(() => container.onMesh(mesh, idMap));
         }
       } catch (error) {
         // Defer error callback too
@@ -148,7 +153,9 @@ export const hostConfig: Record<string, any> = {
     return {};
   },
 
-  getChildHostContext(parentContext: Record<string, never>): Record<string, never> {
+  getChildHostContext(
+    parentContext: Record<string, never>,
+  ): Record<string, never> {
     return parentContext;
   },
 
@@ -169,9 +176,12 @@ export const hostConfig: Record<string, any> = {
   detachDeletedInstance: () => {},
 };
 
-function propsEqual(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
-  const keysA = Object.keys(a).filter(k => k !== 'children');
-  const keysB = Object.keys(b).filter(k => k !== 'children');
+function propsEqual(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+): boolean {
+  const keysA = Object.keys(a).filter((k) => k !== "children");
+  const keysB = Object.keys(b).filter((k) => k !== "children");
 
   if (keysA.length !== keysB.length) return false;
 
@@ -202,7 +212,7 @@ function valuesEqual(a: unknown, b: unknown): boolean {
   if (typeof a !== typeof b) return false;
 
   // For objects, do shallow comparison (one level deep)
-  if (typeof a === 'object' && typeof b === 'object') {
+  if (typeof a === "object" && typeof b === "object") {
     const objA = a as Record<string, unknown>;
     const objB = b as Record<string, unknown>;
     const keysA = Object.keys(objA);

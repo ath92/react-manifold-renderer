@@ -1,8 +1,21 @@
-import type { Manifold } from 'manifold-3d';
-import type { CsgNode } from '../types';
-import { getManifold } from '../manifold-module';
+import type { Manifold } from "manifold-3d";
+import type { CsgNode, PrimitiveType } from "../types";
+import { getManifold } from "../manifold-module";
 
-export function buildGeometry(node: CsgNode): Manifold | null {
+/** Maps manifold originalID (int) → user-supplied node ID (string) */
+export type OriginalIdMap = Map<number, string>;
+
+const PRIMITIVE_TYPES: Set<string> = new Set<PrimitiveType>([
+  "cube",
+  "sphere",
+  "cylinder",
+  "extrude",
+]);
+
+export function buildGeometry(
+  node: CsgNode,
+  idMap?: OriginalIdMap,
+): Manifold | null {
   // Cache hit: not dirty and has manifold
   if (!node.dirty && node.manifold) {
     return node.manifold;
@@ -20,7 +33,7 @@ export function buildGeometry(node: CsgNode): Manifold | null {
   // Build children first (recursive)
   const childManifolds: Manifold[] = [];
   for (const child of node.children) {
-    const m = buildGeometry(child);
+    const m = buildGeometry(child, idMap);
     if (m) childManifolds.push(m);
   }
 
@@ -28,35 +41,42 @@ export function buildGeometry(node: CsgNode): Manifold | null {
 
   switch (node.type) {
     // --- Primitives ---
-    case 'cube': {
+    case "cube": {
       const size = normalizeVec3(node.props.size, [1, 1, 1]);
       const center = node.props.center ?? true;
       result = M.cube(size, center as boolean);
       break;
     }
 
-    case 'sphere': {
+    case "sphere": {
       const radius = (node.props.radius as number) ?? 1;
       const segments = (node.props.segments as number) ?? 32;
       result = M.sphere(radius, segments);
       break;
     }
 
-    case 'cylinder': {
-      const radiusLow = (node.props.radius as number) ?? (node.props.radiusLow as number) ?? 1;
+    case "cylinder": {
+      const radiusLow =
+        (node.props.radius as number) ?? (node.props.radiusLow as number) ?? 1;
       const radiusHigh = (node.props.radiusHigh as number) ?? radiusLow;
       const height = (node.props.height as number) ?? 1;
       const segments = (node.props.segments as number) ?? 32;
       const center = node.props.center ?? true;
-      result = M.cylinder(height, radiusLow, radiusHigh, segments, center as boolean);
+      result = M.cylinder(
+        height,
+        radiusLow,
+        radiusHigh,
+        segments,
+        center as boolean,
+      );
       break;
     }
 
-    case 'extrude': {
+    case "extrude": {
       const polygon = node.props.polygon as [number, number][];
       const height = (node.props.height as number) ?? 1;
       if (polygon && polygon.length >= 3) {
-        const crossSection = new CrossSection([polygon], 'Positive');
+        const crossSection = new CrossSection([polygon], "Positive");
         result = M.extrude(crossSection, height);
         crossSection.delete();
       }
@@ -66,11 +86,10 @@ export function buildGeometry(node: CsgNode): Manifold | null {
     // --- Boolean Operations ---
     // NOTE: Single-child cases use identity transform to create a copy,
     // avoiding shared ownership with child (which would cause double-free)
-    case 'union': {
+    case "union": {
       if (childManifolds.length === 0) {
         result = null;
       } else if (childManifolds.length === 1) {
-        // Create copy via identity transform to avoid shared ownership
         result = childManifolds[0].translate([0, 0, 0]);
       } else {
         result = M.union(childManifolds);
@@ -78,14 +97,13 @@ export function buildGeometry(node: CsgNode): Manifold | null {
       break;
     }
 
-    case 'difference': {
+    case "difference": {
       if (childManifolds.length === 0) {
         result = null;
       } else if (childManifolds.length === 1) {
         result = childManifolds[0].translate([0, 0, 0]);
       } else {
         const [first, ...rest] = childManifolds;
-        // Create temporary union, use it, then dispose
         const restUnion = M.union(rest);
         result = first.subtract(restUnion);
         restUnion.delete();
@@ -93,7 +111,7 @@ export function buildGeometry(node: CsgNode): Manifold | null {
       break;
     }
 
-    case 'intersection': {
+    case "intersection": {
       if (childManifolds.length === 0) {
         result = null;
       } else if (childManifolds.length === 1) {
@@ -105,38 +123,49 @@ export function buildGeometry(node: CsgNode): Manifold | null {
     }
 
     // --- Transforms ---
-    case 'translate': {
+    case "translate": {
       if (childManifolds.length === 1) {
-        const v = normalizeVec3(node.props, [0, 0, 0], ['x', 'y', 'z']);
+        const v = normalizeVec3(node.props, [0, 0, 0], ["x", "y", "z"]);
         result = childManifolds[0].translate(v);
       }
       break;
     }
 
-    case 'rotate': {
+    case "rotate": {
       if (childManifolds.length === 1) {
-        const v = normalizeVec3(node.props, [0, 0, 0], ['x', 'y', 'z']);
+        const v = normalizeVec3(node.props, [0, 0, 0], ["x", "y", "z"]);
         result = childManifolds[0].rotate(v);
       }
       break;
     }
 
-    case 'scale': {
+    case "scale": {
       if (childManifolds.length === 1) {
-        const v = normalizeVec3(node.props, [1, 1, 1], ['x', 'y', 'z']);
+        const v = normalizeVec3(node.props, [1, 1, 1], ["x", "y", "z"]);
         result = childManifolds[0].scale(v);
       }
       break;
     }
 
     // --- Group (passthrough) ---
-    case 'group': {
+    case "group": {
       if (childManifolds.length === 1) {
         result = childManifolds[0].translate([0, 0, 0]);
       } else if (childManifolds.length > 1) {
         result = M.union(childManifolds);
       }
       break;
+    }
+  }
+
+  // Tag primitives with an originalID so faces can be traced back to source nodes
+  if (result && PRIMITIVE_TYPES.has(node.type)) {
+    const tagged = result.asOriginal();
+    result.delete();
+    result = tagged;
+    const nodeId = node.props.nodeId as string | undefined;
+    if (idMap && nodeId) {
+      idMap.set(result.originalID(), nodeId);
     }
   }
 
@@ -151,7 +180,7 @@ export function buildGeometry(node: CsgNode): Manifold | null {
 function normalizeVec3(
   input: unknown,
   defaultValue: [number, number, number],
-  keys: [string, string, string] = ['0', '1', '2']
+  keys: [string, string, string] = ["0", "1", "2"],
 ): [number, number, number] {
   if (Array.isArray(input)) {
     return [
@@ -161,11 +190,11 @@ function normalizeVec3(
     ];
   }
 
-  if (typeof input === 'number') {
+  if (typeof input === "number") {
     return [input, input, input];
   }
 
-  if (typeof input === 'object' && input !== null) {
+  if (typeof input === "object" && input !== null) {
     const obj = input as Record<string, unknown>;
     return [
       (obj[keys[0]] as number) ?? defaultValue[0],

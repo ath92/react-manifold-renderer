@@ -1,8 +1,8 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
-import * as THREE from 'three';
-import type { Mesh } from 'manifold-3d';
-import { CsgRoot } from './components';
-import { meshToGeometry } from './three';
+import React, { useState, useCallback, useRef, useEffect } from "react";
+import * as THREE from "three";
+import type { Mesh } from "manifold-3d";
+import { CsgRoot } from "./components";
+import { meshToGeometry } from "./three";
 
 interface CsgMeshProps {
   children: React.ReactNode;
@@ -15,7 +15,7 @@ export function CsgMesh({ children, onError, material }: CsgMeshProps) {
   const geometryRef = useRef<THREE.BufferGeometry | null>(null);
   const meshRef = useRef<THREE.Mesh | null>(null);
 
-  const handleMesh = useCallback((mesh: Mesh) => {
+  const handleMesh = useCallback((mesh: Mesh, _idMap: Map<number, string>) => {
     const newGeometry = meshToGeometry(mesh);
 
     // Dispose old geometry
@@ -44,7 +44,7 @@ export function CsgMesh({ children, onError, material }: CsgMeshProps) {
     if (!meshRef.current) {
       meshRef.current = new THREE.Mesh(
         geometry ?? new THREE.BufferGeometry(),
-        material ?? new THREE.MeshStandardMaterial({ color: 0xff9900 })
+        material ?? new THREE.MeshStandardMaterial({ color: 0xff9900 }),
       );
     }
   }, [material, geometry]);
