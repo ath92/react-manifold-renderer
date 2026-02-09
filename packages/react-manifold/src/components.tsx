@@ -141,26 +141,104 @@ export const Intersection = "intersection" as unknown as React.FC<{
 
 // --- Transforms ---
 
-export const Translate = "translate" as unknown as React.FC<{
-  x?: number;
-  y?: number;
-  z?: number;
-  children: React.ReactNode;
+// Host element: accepts a 16-element column-major 4×4 matrix
+export const Transform = "transform" as unknown as React.FC<{
+  matrix: number[];
+  children?: React.ReactNode;
 }>;
 
-export const Rotate = "rotate" as unknown as React.FC<{
-  x?: number;
-  y?: number;
-  z?: number;
-  children: React.ReactNode;
-}>;
+// Matrix helpers (column-major)
 
-export const Scale = "scale" as unknown as React.FC<{
+function makeTranslationMatrix(x: number, y: number, z: number): number[] {
+  // prettier-ignore
+  return [
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    x, y, z, 1,
+  ];
+}
+
+function makeRotationMatrix(
+  xDeg: number,
+  yDeg: number,
+  zDeg: number,
+): number[] {
+  const xr = (xDeg * Math.PI) / 180;
+  const yr = (yDeg * Math.PI) / 180;
+  const zr = (zDeg * Math.PI) / 180;
+  const cx = Math.cos(xr),
+    sx = Math.sin(xr);
+  const cy = Math.cos(yr),
+    sy = Math.sin(yr);
+  const cz = Math.cos(zr),
+    sz = Math.sin(zr);
+  // XYZ Euler rotation, column-major
+  // prettier-ignore
+  return [
+    cy * cz,                  cy * sz,                  -sy,    0,
+    sx * sy * cz - cx * sz,   sx * sy * sz + cx * cz,   sx * cy, 0,
+    cx * sy * cz + sx * sz,   cx * sy * sz - sx * cz,   cx * cy, 0,
+    0,                        0,                        0,       1,
+  ];
+}
+
+function makeScaleMatrix(x: number, y: number, z: number): number[] {
+  // prettier-ignore
+  return [
+    x, 0, 0, 0,
+    0, y, 0, 0,
+    0, 0, z, 0,
+    0, 0, 0, 1,
+  ];
+}
+
+// Convenience wrapper components
+
+export function Translate({
+  x = 0,
+  y = 0,
+  z = 0,
+  children,
+}: {
   x?: number;
   y?: number;
   z?: number;
   children: React.ReactNode;
-}>;
+}) {
+  const matrix = React.useMemo(() => makeTranslationMatrix(x, y, z), [x, y, z]);
+  return React.createElement(Transform, { matrix }, children);
+}
+
+export function Rotate({
+  x = 0,
+  y = 0,
+  z = 0,
+  children,
+}: {
+  x?: number;
+  y?: number;
+  z?: number;
+  children: React.ReactNode;
+}) {
+  const matrix = React.useMemo(() => makeRotationMatrix(x, y, z), [x, y, z]);
+  return React.createElement(Transform, { matrix }, children);
+}
+
+export function Scale({
+  x = 1,
+  y = 1,
+  z = 1,
+  children,
+}: {
+  x?: number;
+  y?: number;
+  z?: number;
+  children: React.ReactNode;
+}) {
+  const matrix = React.useMemo(() => makeScaleMatrix(x, y, z), [x, y, z]);
+  return React.createElement(Transform, { matrix }, children);
+}
 
 // --- Group ---
 

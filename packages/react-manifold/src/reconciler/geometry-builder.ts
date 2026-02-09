@@ -122,27 +122,18 @@ export function buildGeometry(
       break;
     }
 
-    // --- Transforms ---
-    case "translate": {
+    // --- Transform (single matrix-based type) ---
+    case "transform": {
       if (childManifolds.length === 1) {
-        const v = normalizeVec3(node.props, [0, 0, 0], ["x", "y", "z"]);
-        result = childManifolds[0].translate(v);
-      }
-      break;
-    }
-
-    case "rotate": {
-      if (childManifolds.length === 1) {
-        const v = normalizeVec3(node.props, [0, 0, 0], ["x", "y", "z"]);
-        result = childManifolds[0].rotate(v);
-      }
-      break;
-    }
-
-    case "scale": {
-      if (childManifolds.length === 1) {
-        const v = normalizeVec3(node.props, [1, 1, 1], ["x", "y", "z"]);
-        result = childManifolds[0].scale(v);
+        const matrix = node.props.matrix as number[];
+        if (matrix && matrix.length === 16) {
+          result = childManifolds[0].transform(
+            matrix as import("manifold-3d").Mat4,
+          );
+        } else {
+          // Identity fallback
+          result = childManifolds[0].translate([0, 0, 0]);
+        }
       }
       break;
     }

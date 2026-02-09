@@ -9,7 +9,7 @@ export { Cube, Sphere, Cylinder, Extrude } from "./components";
 export { Union, Difference, Intersection } from "./components";
 
 // Transforms
-export { Translate, Rotate, Scale } from "./components";
+export { Transform, Translate, Rotate, Scale } from "./components";
 
 // Group
 export { Group } from "./components";

@@ -12,7 +12,10 @@ import {
   findNodeById,
   getAncestorTransforms,
   applyTransformDelta,
-  type AncestorTransform,
+  multiplyMatrices,
+  makeTranslationMatrix,
+  makeRotationMatrix,
+  makeScaleMatrix,
 } from "../types/CsgTree";
 import { CsgTreeRenderer } from "./CsgTreeRenderer";
 import {
@@ -30,33 +33,18 @@ const Z_UP_TO_Y_UP = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
 const Y_UP_TO_Z_UP = new THREE.Matrix4().makeRotationX(Math.PI / 2);
 
 /**
- * Build a Three.js Matrix4 from a chain of CSG ancestor transforms,
+ * Build a Three.js Matrix4 from a chain of CSG ancestor transform matrices,
  * converted to Three.js Y-up space.
  */
-function buildAncestorMatrix(transforms: AncestorTransform[]): THREE.Matrix4 {
-  const csgMatrix = new THREE.Matrix4();
-  for (const t of transforms) {
-    const m = new THREE.Matrix4();
-    switch (t.type) {
-      case "translate":
-        m.makeTranslation(t.x, t.y, t.z);
-        break;
-      case "rotate":
-        m.makeRotationFromEuler(
-          new THREE.Euler(
-            (t.x * Math.PI) / 180,
-            (t.y * Math.PI) / 180,
-            (t.z * Math.PI) / 180,
-            "XYZ",
-          ),
-        );
-        break;
-      case "scale":
-        m.makeScale(t.x, t.y, t.z);
-        break;
-    }
-    csgMatrix.multiply(m);
+function buildAncestorMatrix(matrices: number[][]): THREE.Matrix4 {
+  // Multiply all ancestor matrices together (root-to-target order)
+  let combined = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  for (const m of matrices) {
+    combined = multiplyMatrices(combined, m);
   }
+
+  const csgMatrix = new THREE.Matrix4();
+  csgMatrix.fromArray(combined);
 
   // Convert to Three.js Y-up space: R * M_csg * R^-1
   const result = new THREE.Matrix4();
@@ -94,9 +82,9 @@ export function SelectionOverlay({
 
   // Compute ancestor matrix
   const ancestorMatrix = useMemo(() => {
-    const transforms = getAncestorTransforms(tree, selectedId);
-    if (!transforms) return new THREE.Matrix4();
-    return buildAncestorMatrix(transforms);
+    const matrices = getAncestorTransforms(tree, selectedId);
+    if (!matrices || matrices.length === 0) return new THREE.Matrix4();
+    return buildAncestorMatrix(matrices);
   }, [tree, selectedId]);
 
   // Decompose the ancestor matrix to get the "original" position/rotation/scale
@@ -148,7 +136,7 @@ export function SelectionOverlay({
     const group = groupRef.current;
     const { pos: origPos, quat: origQuat, scl: origScl } = originalTransform;
 
-    let newTree: CsgTreeNode | null = null;
+    let deltaMatrix: number[] | null = null;
 
     if (transformMode === "translate") {
       const dx3 = group.position.x - origPos.x;
@@ -159,27 +147,24 @@ export function SelectionOverlay({
         return;
 
       // Three.js Y-up (x, y, z) → CSG Z-up (x, -z, y)
-      newTree = applyTransformDelta(
-        tree,
-        selectedId,
-        "translate",
-        dx3,
-        -dz3,
-        dy3,
-      );
+      deltaMatrix = makeTranslationMatrix(dx3, -dz3, dy3);
     } else if (transformMode === "rotate") {
       const deltaQuat = origQuat.clone().invert().premultiply(group.quaternion);
       const euler3 = new THREE.Euler().setFromQuaternion(deltaQuat, "XYZ");
 
-      const dx = (euler3.x * 180) / Math.PI;
-      const dy = (euler3.y * 180) / Math.PI;
-      const dz = (euler3.z * 180) / Math.PI;
+      const dxDeg = (euler3.x * 180) / Math.PI;
+      const dyDeg = (euler3.y * 180) / Math.PI;
+      const dzDeg = (euler3.z * 180) / Math.PI;
 
-      if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01 && Math.abs(dz) < 0.01)
+      if (
+        Math.abs(dxDeg) < 0.01 &&
+        Math.abs(dyDeg) < 0.01 &&
+        Math.abs(dzDeg) < 0.01
+      )
         return;
 
       // Three.js Y-up rot(x, y, z) → CSG Z-up rot(x, -z, y)
-      newTree = applyTransformDelta(tree, selectedId, "rotate", dx, -dz, dy);
+      deltaMatrix = makeRotationMatrix(dxDeg, -dzDeg, dyDeg);
     } else if (transformMode === "scale") {
       const sx = group.scale.x / origScl.x;
       const sy = group.scale.y / origScl.y;
@@ -193,11 +178,14 @@ export function SelectionOverlay({
         return;
 
       // Three.js Y-up scale(x, y, z) → CSG Z-up scale(x, z, y)
-      newTree = applyTransformDelta(tree, selectedId, "scale", sx, sz, sy);
+      deltaMatrix = makeScaleMatrix(sx, sz, sy);
     }
 
-    if (newTree) {
-      updateShape(shapeIndex, newTree);
+    if (deltaMatrix) {
+      const newTree = applyTransformDelta(tree, selectedId, deltaMatrix);
+      if (newTree) {
+        updateShape(shapeIndex, newTree);
+      }
     }
 
     // Reset group to ancestor transform

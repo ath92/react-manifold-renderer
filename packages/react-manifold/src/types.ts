@@ -1,4 +1,4 @@
-import type { Manifold } from 'manifold-3d';
+import type { Manifold } from "manifold-3d";
 
 export interface CsgNode {
   type: NodeType;
@@ -11,10 +11,10 @@ export interface CsgNode {
   dirty: boolean;
 }
 
-export type PrimitiveType = 'cube' | 'sphere' | 'cylinder' | 'extrude';
-export type BooleanType = 'union' | 'difference' | 'intersection';
-export type TransformType = 'translate' | 'rotate' | 'scale';
-export type GroupType = 'group';
+export type PrimitiveType = "cube" | "sphere" | "cylinder" | "extrude";
+export type BooleanType = "union" | "difference" | "intersection";
+export type TransformType = "transform";
+export type GroupType = "group";
 
 export type NodeType = PrimitiveType | BooleanType | TransformType | GroupType;
 

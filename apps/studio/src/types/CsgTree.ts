@@ -63,29 +63,11 @@ export interface CsgNodeName {
   name?: string;
 }
 
-// --- Transforms ---
+// --- Transform (single matrix-based type) ---
 
-export interface CsgTranslateNode extends CsgNodeBase {
-  type: "translate";
-  x?: number;
-  y?: number;
-  z?: number;
-  children: CsgTreeNode[];
-}
-
-export interface CsgRotateNode extends CsgNodeBase {
-  type: "rotate";
-  x?: number;
-  y?: number;
-  z?: number;
-  children: CsgTreeNode[];
-}
-
-export interface CsgScaleNode extends CsgNodeBase {
-  type: "scale";
-  x?: number;
-  y?: number;
-  z?: number;
+export interface CsgTransformNode extends CsgNodeBase {
+  type: "transform";
+  matrix: number[]; // 16 elements, column-major (matches THREE.Matrix4.elements and Manifold Mat4)
   children: CsgTreeNode[];
 }
 
@@ -109,7 +91,6 @@ export type CsgBooleanNode = (
   | CsgIntersectionNode
 ) &
   CsgNodeName;
-export type CsgTransformNode = CsgTranslateNode | CsgRotateNode | CsgScaleNode;
 export type CsgParentNode = CsgBooleanNode | CsgTransformNode | CsgGroupNode;
 
 export type CsgTreeNode =
@@ -121,6 +102,116 @@ export type CsgTreeNode =
 export function hasChildren(node: CsgTreeNode): node is CsgParentNode {
   return "children" in node;
 }
+
+// ─── Matrix Helpers (column-major 4×4) ───────────────────────────────────────
+
+export function makeTranslationMatrix(
+  x: number,
+  y: number,
+  z: number,
+): number[] {
+  // prettier-ignore
+  return [
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    x, y, z, 1,
+  ];
+}
+
+export function makeRotationMatrix(
+  xDeg: number,
+  yDeg: number,
+  zDeg: number,
+): number[] {
+  const xr = (xDeg * Math.PI) / 180;
+  const yr = (yDeg * Math.PI) / 180;
+  const zr = (zDeg * Math.PI) / 180;
+  const cx = Math.cos(xr),
+    sx = Math.sin(xr);
+  const cy = Math.cos(yr),
+    sy = Math.sin(yr);
+  const cz = Math.cos(zr),
+    sz = Math.sin(zr);
+  // XYZ Euler rotation, column-major
+  // prettier-ignore
+  return [
+    cy * cz,                  cy * sz,                  -sy,    0,
+    sx * sy * cz - cx * sz,   sx * sy * sz + cx * cz,   sx * cy, 0,
+    cx * sy * cz + sx * sz,   cx * sy * sz - sx * cz,   cx * cy, 0,
+    0,                        0,                        0,       1,
+  ];
+}
+
+export function makeScaleMatrix(x: number, y: number, z: number): number[] {
+  // prettier-ignore
+  return [
+    x, 0, 0, 0,
+    0, y, 0, 0,
+    0, 0, z, 0,
+    0, 0, 0, 1,
+  ];
+}
+
+export function multiplyMatrices(a: number[], b: number[]): number[] {
+  const out = new Array(16);
+  for (let col = 0; col < 4; col++) {
+    for (let row = 0; row < 4; row++) {
+      out[col * 4 + row] =
+        a[0 * 4 + row] * b[col * 4 + 0] +
+        a[1 * 4 + row] * b[col * 4 + 1] +
+        a[2 * 4 + row] * b[col * 4 + 2] +
+        a[3 * 4 + row] * b[col * 4 + 3];
+    }
+  }
+  return out;
+}
+
+// ─── Convenience Node Constructors ───────────────────────────────────────────
+
+export function translateNode(
+  x: number,
+  y: number,
+  z: number,
+  children: CsgTreeNode[],
+): CsgTransformNode {
+  return {
+    id: genId(),
+    type: "transform",
+    matrix: makeTranslationMatrix(x, y, z),
+    children,
+  };
+}
+
+export function rotateNode(
+  xDeg: number,
+  yDeg: number,
+  zDeg: number,
+  children: CsgTreeNode[],
+): CsgTransformNode {
+  return {
+    id: genId(),
+    type: "transform",
+    matrix: makeRotationMatrix(xDeg, yDeg, zDeg),
+    children,
+  };
+}
+
+export function scaleNode(
+  x: number,
+  y: number,
+  z: number,
+  children: CsgTreeNode[],
+): CsgTransformNode {
+  return {
+    id: genId(),
+    type: "transform",
+    matrix: makeScaleMatrix(x, y, z),
+    children,
+  };
+}
+
+// ─── Tree Queries ────────────────────────────────────────────────────────────
 
 /**
  * Find a node by its id within a tree. Returns undefined if not found.
@@ -161,25 +252,18 @@ function collectLeafIds(node: CsgTreeNode, ids: Set<string>): void {
 
 // ─── Ancestor Transform Utilities ────────────────────────────────────────────
 
-export interface AncestorTransform {
-  type: "translate" | "rotate" | "scale";
-  x: number;
-  y: number;
-  z: number;
-}
-
 /**
- * Collect the chain of ancestor transform nodes from root down to (but not
- * including) the node with the given id. Returns the transforms in
- * root-to-target order, or null if the target isn't found.
+ * Collect ancestor transform matrices from root down to (but not including)
+ * the node with the given id. Returns the matrices in root-to-target order,
+ * or null if the target isn't found.
  */
 export function getAncestorTransforms(
   root: CsgTreeNode,
   targetId: string,
-): AncestorTransform[] | null {
-  const path: AncestorTransform[] = [];
-  if (findAncestorPath(root, targetId, path)) {
-    return path;
+): number[][] | null {
+  const matrices: number[][] = [];
+  if (findAncestorPath(root, targetId, matrices)) {
+    return matrices;
   }
   return null;
 }
@@ -187,33 +271,25 @@ export function getAncestorTransforms(
 function findAncestorPath(
   node: CsgTreeNode,
   targetId: string,
-  path: AncestorTransform[],
+  matrices: number[][],
 ): boolean {
   if (node.id === targetId) return true;
   if (!hasChildren(node)) return false;
 
-  const isTransform =
-    node.type === "translate" ||
-    node.type === "rotate" ||
-    node.type === "scale";
+  const isTransform = node.type === "transform";
   if (isTransform) {
-    path.push({
-      type: node.type as AncestorTransform["type"],
-      x: (node as CsgTransformNode).x ?? 0,
-      y: (node as CsgTransformNode).y ?? 0,
-      z: (node as CsgTransformNode).z ?? 0,
-    });
+    matrices.push((node as CsgTransformNode).matrix);
   }
 
   for (const child of node.children) {
-    if (findAncestorPath(child, targetId, path)) {
+    if (findAncestorPath(child, targetId, matrices)) {
       return true;
     }
   }
 
   // Backtrack: this branch didn't contain the target
   if (isTransform) {
-    path.pop();
+    matrices.pop();
   }
   return false;
 }
@@ -244,33 +320,6 @@ export function replaceNode(
 }
 
 /**
- * Return a new tree where the node at `targetId` is wrapped in a new
- * transform node.
- */
-export function wrapNodeWithTransform(
-  root: CsgTreeNode,
-  targetId: string,
-  transformType: "translate" | "rotate" | "scale",
-  x: number,
-  y: number,
-  z: number,
-): CsgTreeNode | null {
-  const target = findNodeById(root, targetId);
-  if (!target) return null;
-
-  const wrapper: CsgTransformNode = {
-    id: genId(),
-    type: transformType,
-    x,
-    y,
-    z,
-    children: [target],
-  };
-
-  return replaceNode(root, targetId, wrapper);
-}
-
-/**
  * Find the parent of a node by its id. Returns undefined if the node is
  * the root or not found.
  */
@@ -288,52 +337,42 @@ export function findParentNode(
 }
 
 /**
- * Apply a transform delta to a node in the tree. If the node's immediate
- * parent is already a transform of the same type with the target as its
- * only child, update that parent's values. Otherwise, wrap the target in
- * a new transform node.
+ * Apply a transform delta to a node in the tree.
  *
- * For translate: delta values are added to existing values.
- * For rotate: delta values are added to existing values.
- * For scale: delta values are multiplied with existing values.
+ * If the node's immediate parent is already a transform node with the target
+ * as its only child, the delta matrix is multiplied into the existing one.
+ * Otherwise, the target is wrapped in a new transform node.
+ *
+ * The `deltaMatrix` should be a 16-element column-major 4×4 matrix
+ * representing the incremental transform to apply.
  */
 export function applyTransformDelta(
   root: CsgTreeNode,
   targetId: string,
-  transformType: "translate" | "rotate" | "scale",
-  dx: number,
-  dy: number,
-  dz: number,
+  deltaMatrix: number[],
 ): CsgTreeNode | null {
   const parent = findParentNode(root, targetId);
 
-  // Check if parent is a matching transform with this as its only child
-  if (parent && parent.type === transformType && parent.children.length === 1) {
-    const p = parent as CsgTransformNode;
-    let newX: number, newY: number, newZ: number;
-
-    if (transformType === "scale") {
-      // Scale compounds multiplicatively
-      newX = (p.x ?? 1) * dx;
-      newY = (p.y ?? 1) * dy;
-      newZ = (p.z ?? 1) * dz;
-    } else {
-      // Translate and rotate compound additively
-      newX = (p.x ?? 0) + dx;
-      newY = (p.y ?? 0) + dy;
-      newZ = (p.z ?? 0) + dz;
-    }
-
-    const updatedParent: CsgTreeNode = {
-      ...p,
-      x: newX,
-      y: newY,
-      z: newZ,
-    } as CsgTreeNode;
-
+  // If parent is a transform with this as its only child, multiply matrices
+  if (parent && parent.type === "transform" && parent.children.length === 1) {
+    const combined = multiplyMatrices(parent.matrix, deltaMatrix);
+    const updatedParent: CsgTransformNode = {
+      ...parent,
+      matrix: combined,
+    };
     return replaceNode(root, parent.id, updatedParent);
   }
 
-  // No matching parent transform — wrap with a new one
-  return wrapNodeWithTransform(root, targetId, transformType, dx, dy, dz);
+  // No matching parent transform — wrap with a new transform node
+  const target = findNodeById(root, targetId);
+  if (!target) return null;
+
+  const wrapper: CsgTransformNode = {
+    id: genId(),
+    type: "transform",
+    matrix: deltaMatrix,
+    children: [target],
+  };
+
+  return replaceNode(root, targetId, wrapper);
 }

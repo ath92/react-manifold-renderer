@@ -7,9 +7,7 @@ import {
   Union,
   Difference,
   Intersection,
-  Translate,
-  Rotate,
-  Scale,
+  Transform,
   Group,
 } from "@manifold-studio/react-manifold";
 import type { CsgTreeNode } from "../types/CsgTree";
@@ -61,24 +59,8 @@ export function CsgTreeRenderer({
       return <Difference>{children}</Difference>;
     case "intersection":
       return <Intersection>{children}</Intersection>;
-    case "translate":
-      return (
-        <Translate x={node.x} y={node.y} z={node.z}>
-          {children}
-        </Translate>
-      );
-    case "rotate":
-      return (
-        <Rotate x={node.x} y={node.y} z={node.z}>
-          {children}
-        </Rotate>
-      );
-    case "scale":
-      return (
-        <Scale x={node.x} y={node.y} z={node.z}>
-          {children}
-        </Scale>
-      );
+    case "transform":
+      return <Transform matrix={node.matrix}>{children}</Transform>;
     case "group":
       return <Group>{children}</Group>;
     default: {

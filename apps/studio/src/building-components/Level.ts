@@ -6,7 +6,7 @@
 
 import type { Polygon, WindowConfig } from "../types/BuildingTypes";
 import type { CsgTreeNode } from "../types/CsgTree";
-import { genId } from "../types/CsgTree";
+import { genId, translateNode, rotateNode } from "../types/CsgTree";
 import { buildFloor } from "./Floor";
 import { buildWall } from "./Wall";
 
@@ -44,42 +44,31 @@ export function buildLevel({
 }): CsgTreeNode {
   const edges = edgesFromPolygon(polygon);
 
-  const wallNodes: CsgTreeNode[] = edges.map((edge) => ({
-    id: genId(),
-    type: 'translate' as const,
-    x: edge.start[0],
-    y: edge.start[1],
-    z: 0,
-    children: [{
-      id: genId(),
-      type: 'rotate' as const,
-      z: edge.angle,
-      children: [
+  const wallNodes: CsgTreeNode[] = edges.map((edge) =>
+    translateNode(edge.start[0], edge.start[1], 0, [
+      rotateNode(0, 0, edge.angle, [
         buildWall({
           length: edge.length,
           height: wallHeight,
           thickness: wallThickness,
           windows: windowConfig,
         }),
-      ],
-    }],
-  }));
+      ]),
+    ]),
+  );
 
   return {
     id: genId(),
-    type: 'union',
+    type: "union",
     children: [
       buildFloor({ polygon, thickness: floorThickness }),
-      {
-        id: genId(),
-        type: 'translate',
-        z: floorThickness,
-        children: [{
+      translateNode(0, 0, floorThickness, [
+        {
           id: genId(),
-          type: 'union',
+          type: "union",
           children: wallNodes,
-        }],
-      },
+        },
+      ]),
     ],
   };
 }

@@ -2,7 +2,7 @@
 
 import type { Polygon, WindowConfig } from "../types/BuildingTypes";
 import type { CsgTreeNode } from "../types/CsgTree";
-import { genId } from "../types/CsgTree";
+import { genId, translateNode } from "../types/CsgTree";
 import { buildLevel } from "./Level";
 import { buildRoof } from "./Roof";
 
@@ -29,11 +29,8 @@ export function buildBuilding({
 
   const levelNodes: CsgTreeNode[] = [];
   for (let i = 0; i < levels; i++) {
-    levelNodes.push({
-      id: genId(),
-      type: "translate",
-      z: i * levelHeight,
-      children: [
+    levelNodes.push(
+      translateNode(0, 0, i * levelHeight, [
         buildLevel({
           polygon,
           floorThickness,
@@ -41,8 +38,8 @@ export function buildBuilding({
           wallThickness,
           windows: windowConfig,
         }),
-      ],
-    });
+      ]),
+    );
   }
 
   return {
@@ -51,18 +48,13 @@ export function buildBuilding({
     name: "building",
     children: [
       ...levelNodes,
-      {
-        id: genId(),
-        type: "translate",
-        z: levels * levelHeight,
-        children: [
-          buildRoof({
-            polygon,
-            thickness: roofThickness,
-            overhang: roofOverhang,
-          }),
-        ],
-      },
+      translateNode(0, 0, levels * levelHeight, [
+        buildRoof({
+          polygon,
+          thickness: roofThickness,
+          overhang: roofOverhang,
+        }),
+      ]),
     ],
   };
 }
