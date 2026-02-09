@@ -46,8 +46,6 @@ export function meshToGeometry(mesh: Mesh): THREE.BufferGeometry {
 
   const { vertProperties, triVerts, numProp } = mesh;
 
-  // vertProperties is interleaved: [x, y, z, ...props, x, y, z, ...props, ...]
-  // We need to extract positions (first 3 values per vertex)
   const vertexCount = vertProperties.length / numProp;
   const positions = new Float32Array(vertexCount * 3);
 
@@ -61,51 +59,7 @@ export function meshToGeometry(mesh: Mesh): THREE.BufferGeometry {
   geometry.setIndex(new THREE.BufferAttribute(triVerts, 1));
   geometry.computeVertexNormals();
 
-  // Initialize selection attribute (all zeros = unselected)
-  const selected = new Float32Array(vertexCount);
-  geometry.setAttribute("selected", new THREE.BufferAttribute(selected, 1));
-
   return geometry;
-}
-
-/**
- * Update the `selected` vertex attribute on a geometry given
- * the set of node IDs that should be highlighted and the tri→nodeId map.
- */
-export function updateSelectionAttribute(
-  geometry: THREE.BufferGeometry,
-  triNodeIdMap: TriNodeIdMap,
-  selectedNodeIds: ReadonlySet<string>,
-): void {
-  const attr = geometry.getAttribute("selected") as THREE.BufferAttribute;
-  if (!attr) return;
-
-  const arr = attr.array as Float32Array;
-  arr.fill(0);
-
-  if (selectedNodeIds.size === 0) {
-    attr.needsUpdate = true;
-    return;
-  }
-
-  const index = geometry.getIndex();
-  if (!index) {
-    attr.needsUpdate = true;
-    return;
-  }
-
-  const indexArr = index.array;
-  for (let tri = 0; tri < triNodeIdMap.length; tri++) {
-    const nodeId = triNodeIdMap[tri];
-    if (nodeId && selectedNodeIds.has(nodeId)) {
-      const i = tri * 3;
-      arr[indexArr[i]] = 1;
-      arr[indexArr[i + 1]] = 1;
-      arr[indexArr[i + 2]] = 1;
-    }
-  }
-
-  attr.needsUpdate = true;
 }
 
 /**
@@ -140,8 +94,4 @@ export function updateGeometry(
   geometry.setIndex(new THREE.BufferAttribute(triVerts, 1));
   geometry.computeVertexNormals();
   geometry.attributes.position.needsUpdate = true;
-
-  // Reset selection attribute for new vertex count
-  const selected = new Float32Array(vertexCount);
-  geometry.setAttribute("selected", new THREE.BufferAttribute(selected, 1));
 }

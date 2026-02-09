@@ -8,7 +8,6 @@ import {
   Rotate,
   meshToGeometry,
   buildTriNodeIdMap,
-  updateSelectionAttribute,
   nodeIdForFace,
 } from "@manifold-studio/react-manifold";
 import type {
@@ -16,9 +15,10 @@ import type {
   TriNodeIdMap,
 } from "@manifold-studio/react-manifold";
 import type { CsgTreeNode } from "./types/CsgTree";
-import { genId, findNodeById, getLeafPrimitiveIds } from "./types/CsgTree";
+import { genId, findNodeById } from "./types/CsgTree";
 import { CsgTreeRenderer } from "./components/CsgTreeRenderer";
 import { CsgTreePanel } from "./components/CsgTreePanel";
+import { SelectionOverlay } from "./components/SelectionOverlay";
 import { DrawBuildingTool } from "./tools/DrawBuildingTool";
 import {
   useSelectedId,
@@ -27,65 +27,26 @@ import {
   useAddShape,
   useDrawToolActive,
   useSetDrawToolActive,
+  useTransformMode,
+  useSetTransformMode,
+  useIsDraggingGizmo,
+  type TransformMode,
 } from "./store";
-
-// ─── Selection highlight material ────────────────────────────────────────────
-
-const BASE_COLOR = new THREE.Color("#e8d4b8");
-const HIGHLIGHT_COLOR = new THREE.Color("#ff6b6b");
-
-function makeSelectionMaterial(): THREE.MeshStandardMaterial {
-  const mat = new THREE.MeshStandardMaterial({
-    color: BASE_COLOR,
-    flatShading: true,
-  });
-
-  mat.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader.replace(
-      "void main() {",
-      `attribute float selected;
-varying float vSelected;
-void main() {
-  vSelected = selected;`,
-    );
-
-    shader.fragmentShader = shader.fragmentShader.replace(
-      "void main() {",
-      `varying float vSelected;
-uniform vec3 highlightColor;
-void main() {`,
-    );
-
-    // Mix highlight color into diffuse after it's been set.
-    // step() avoids smooth interpolation bleed: only triangles where
-    // ALL vertices are selected (vSelected interpolates to ~1.0) highlight.
-    shader.fragmentShader = shader.fragmentShader.replace(
-      "#include <color_fragment>",
-      `#include <color_fragment>
-  float sel = step(0.99, vSelected);
-  diffuseColor.rgb = mix(diffuseColor.rgb, highlightColor, sel * 0.6);`,
-    );
-
-    shader.uniforms.highlightColor = { value: HIGHLIGHT_COLOR };
-  };
-
-  return mat;
-}
 
 // ─── CSG Scene ───────────────────────────────────────────────────────────────
 
-function CsgScene({ tree }: { tree: CsgTreeNode }) {
+function CsgScene({
+  tree,
+  shapeIndex,
+}: {
+  tree: CsgTreeNode;
+  shapeIndex: number;
+}) {
   const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
   const [error, setError] = useState<string | null>(null);
   const selectedId = useSelectedId();
   const setSelectedId = useSetSelectedId();
   const triNodeIdMapRef = useRef<TriNodeIdMap>([]);
-  const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
-
-  // Lazily create material (stable across renders)
-  if (!materialRef.current) {
-    materialRef.current = makeSelectionMaterial();
-  }
 
   const handleMesh = useCallback((mesh: Mesh, idMap: OriginalIdMap) => {
     const newGeometry = meshToGeometry(mesh) as unknown as THREE.BufferGeometry;
@@ -112,36 +73,17 @@ function CsgScene({ tree }: { tree: CsgTreeNode }) {
           return;
         }
       }
-      // Fallback: select the top-level shape
       setSelectedId(tree.id);
     },
     [tree.id, setSelectedId],
   );
 
-  // Update selection attribute whenever selectedId or geometry changes
-  useEffect(() => {
-    if (!geometry) return;
-
-    let activeIds = new Set<string>();
-    if (selectedId) {
-      // Find the selected node within this shape's tree
-      const selectedNode = findNodeById(tree, selectedId);
-      if (selectedNode) {
-        activeIds = getLeafPrimitiveIds(selectedNode);
-      }
-    }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    updateSelectionAttribute(
-      geometry as any,
-      triNodeIdMapRef.current,
-      activeIds,
-    );
-  }, [selectedId, geometry, tree]);
+  // Check if the selection lives within this shape's tree
+  const selectedNode = selectedId ? findNodeById(tree, selectedId) : undefined;
 
   return (
     <>
       <CsgRoot onMesh={handleMesh} onError={handleError}>
-        {/* Rotate so Z-up (extrude direction) becomes Y-up for Three.js */}
         <Rotate x={-90}>
           <CsgTreeRenderer node={tree} />
         </Rotate>
@@ -155,8 +97,16 @@ function CsgScene({ tree }: { tree: CsgTreeNode }) {
       {geometry && (
         <mesh
           geometry={geometry as unknown as THREE.BufferGeometry}
-          material={materialRef.current!}
           onClick={handleClick}
+        >
+          <meshStandardMaterial color="#e8d4b8" flatShading />
+        </mesh>
+      )}
+      {selectedNode && (
+        <SelectionOverlay
+          tree={tree}
+          selectedId={selectedId!}
+          shapeIndex={shapeIndex}
         />
       )}
     </>
@@ -165,6 +115,12 @@ function CsgScene({ tree }: { tree: CsgTreeNode }) {
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
+const TRANSFORM_KEYS: Record<string, TransformMode> = {
+  t: "translate",
+  r: "rotate",
+  s: "scale",
+};
+
 function App() {
   const drawToolActive = useDrawToolActive();
   const setDrawToolActive = useSetDrawToolActive();
@@ -172,6 +128,9 @@ function App() {
   const addShape = useAddShape();
   const selectedId = useSelectedId();
   const setSelectedId = useSetSelectedId();
+  const transformMode = useTransformMode();
+  const setTransformMode = useSetTransformMode();
+  const isDraggingGizmo = useIsDraggingGizmo();
 
   // Construct a single tree for the whole scene (for CsgTreePanel)
   const sceneTree = useMemo<CsgTreeNode>(() => {
@@ -195,6 +154,25 @@ function App() {
     },
     [setSelectedId],
   );
+
+  // T/R/S keyboard shortcuts for transform mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept if typing in an input
+      if (
+        e.target instanceof HTMLInputElement ||
+        e.target instanceof HTMLTextAreaElement
+      )
+        return;
+
+      const mode = TRANSFORM_KEYS[e.key.toLowerCase()];
+      if (mode) {
+        setTransformMode(mode);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [setTransformMode]);
 
   return (
     <div style={{ width: "100vw", height: "100vh", display: "flex" }}>
@@ -234,10 +212,32 @@ function App() {
               borderRadius: "4px",
               cursor: "pointer",
               fontSize: "13px",
+              marginBottom: "8px",
             }}
           >
             {drawToolActive ? "Drawing (Esc to cancel)" : "Draw Building"}
           </button>
+          <div style={{ display: "flex", gap: "4px" }}>
+            {(["translate", "rotate", "scale"] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setTransformMode(mode)}
+                style={{
+                  flex: 1,
+                  padding: "6px",
+                  background: transformMode === mode ? "#4fc3f7" : "#333",
+                  color: transformMode === mode ? "#000" : "#fff",
+                  border: "1px solid #555",
+                  borderRadius: "4px",
+                  cursor: "pointer",
+                  fontSize: "11px",
+                  textTransform: "capitalize",
+                }}
+              >
+                {mode[0].toUpperCase()}
+              </button>
+            ))}
+          </div>
         </fieldset>
 
         <CsgTreePanel
@@ -247,10 +247,9 @@ function App() {
         />
 
         <div style={{ marginTop: "auto", fontSize: "12px", color: "#666" }}>
-          <p>Drag to rotate</p>
-          <p>Scroll to zoom</p>
-          <p>Click building to select</p>
-          <p>Click background to deselect</p>
+          <p>T / R / S to switch transform mode</p>
+          <p>Drag to rotate, scroll to zoom</p>
+          <p>Click to select, background to deselect</p>
         </div>
       </div>
 
@@ -264,8 +263,8 @@ function App() {
           <directionalLight position={[10, 10, 10]} intensity={1} />
           <directionalLight position={[-10, -10, -10]} intensity={0.3} />
 
-          {shapes.map((shape) => (
-            <CsgScene key={shape.id} tree={shape} />
+          {shapes.map((shape, index) => (
+            <CsgScene key={shape.id} tree={shape} shapeIndex={index} />
           ))}
 
           <DrawBuildingTool
@@ -275,7 +274,10 @@ function App() {
           />
 
           <gridHelper args={[20, 20, "#444", "#333"]} />
-          <OrbitControls makeDefault enabled={!drawToolActive} />
+          <OrbitControls
+            makeDefault
+            enabled={!drawToolActive && !isDraggingGizmo}
+          />
         </Canvas>
       </div>
     </div>

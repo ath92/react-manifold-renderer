@@ -19,7 +19,6 @@ export {
   meshToGeometry,
   updateGeometry,
   buildTriNodeIdMap,
-  updateSelectionAttribute,
   nodeIdForFace,
 } from "./three";
 export type { TriNodeIdMap } from "./three";

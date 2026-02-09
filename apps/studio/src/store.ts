@@ -10,18 +10,28 @@ import type { CsgTreeNode } from "./types/CsgTree";
 
 // ─── Local store (zustand, not synced) ──────────────────────────────────────
 
+export type TransformMode = "translate" | "rotate" | "scale";
+
 interface LocalState {
   selectedId: string | null;
   drawToolActive: boolean;
+  transformMode: TransformMode;
+  isDraggingGizmo: boolean;
   setSelectedId: (id: string | null) => void;
   setDrawToolActive: (active: boolean) => void;
+  setTransformMode: (mode: TransformMode) => void;
+  setIsDraggingGizmo: (dragging: boolean) => void;
 }
 
 export const useLocalStore = create<LocalState>((set) => ({
   selectedId: null,
   drawToolActive: false,
+  transformMode: "translate",
+  isDraggingGizmo: false,
   setSelectedId: (selectedId) => set({ selectedId }),
   setDrawToolActive: (drawToolActive) => set({ drawToolActive }),
+  setTransformMode: (transformMode) => set({ transformMode }),
+  setIsDraggingGizmo: (isDraggingGizmo) => set({ isDraggingGizmo }),
 }));
 
 export const useSelectedId = () => useLocalStore((s) => s.selectedId);
@@ -29,6 +39,12 @@ export const useSetSelectedId = () => useLocalStore((s) => s.setSelectedId);
 export const useDrawToolActive = () => useLocalStore((s) => s.drawToolActive);
 export const useSetDrawToolActive = () =>
   useLocalStore((s) => s.setDrawToolActive);
+export const useTransformMode = () => useLocalStore((s) => s.transformMode);
+export const useSetTransformMode = () =>
+  useLocalStore((s) => s.setTransformMode);
+export const useIsDraggingGizmo = () => useLocalStore((s) => s.isDraggingGizmo);
+export const useSetIsDraggingGizmo = () =>
+  useLocalStore((s) => s.setIsDraggingGizmo);
 
 // ─── Loro doc (synced state) ────────────────────────────────────────────────
 
@@ -92,6 +108,14 @@ export function useShapes(): CsgTreeNode[] {
 export function useAddShape(): (node: CsgTreeNode) => void {
   return useCallback((node: CsgTreeNode) => {
     shapesList.push(node as unknown as Record<string, unknown>);
+    doc.commit();
+  }, []);
+}
+
+export function useUpdateShape(): (index: number, node: CsgTreeNode) => void {
+  return useCallback((index: number, node: CsgTreeNode) => {
+    shapesList.delete(index, 1);
+    shapesList.insert(index, node as unknown as Record<string, unknown>);
     doc.commit();
   }, []);
 }
