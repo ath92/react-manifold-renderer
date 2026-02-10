@@ -50,6 +50,7 @@ export function CsgTreeRenderer({
         />
       );
     case "extrude":
+      console.log("extrude", node);
       return (
         <Extrude polygon={node.polygon} height={node.height} nodeId={node.id} />
       );

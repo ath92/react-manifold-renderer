@@ -41,13 +41,7 @@ import { useShapes, useAddShape } from "./sync-store";
 
 // ─── CSG Scene ───────────────────────────────────────────────────────────────
 
-function CsgScene({
-  tree,
-  shapeIndex,
-}: {
-  tree: CsgTreeNode;
-  shapeIndex: number;
-}) {
+function CsgScene({ tree }: { tree: CsgTreeNode }) {
   const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
   const [error, setError] = useState<string | null>(null);
   const selectedId = useSelectedId();
@@ -58,6 +52,7 @@ function CsgScene({
   const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMesh = useCallback((mesh: Mesh, idMap: OriginalIdMap) => {
+    console.log(mesh, idMap);
     const newGeometry = meshToGeometry(mesh) as unknown as THREE.BufferGeometry;
     triNodeIdMapRef.current = buildTriNodeIdMap(mesh, idMap);
     setGeometry((prev) => {
@@ -154,11 +149,7 @@ function CsgScene({
         </mesh>
       )}
       {selectedNode && (
-        <SelectionOverlay
-          tree={tree}
-          selectedId={selectedId!}
-          shapeIndex={shapeIndex}
-        />
+        <SelectionOverlay tree={tree} selectedId={selectedId!} />
       )}
     </>
   );
@@ -350,8 +341,8 @@ function App() {
           <directionalLight position={[10, -10, 10]} intensity={1} />
           <directionalLight position={[-10, 10, -10]} intensity={0.3} />
 
-          {shapes.map((shape, index) => (
-            <CsgScene key={shape.id} tree={shape} shapeIndex={index} />
+          {shapes.map((shape) => (
+            <CsgScene key={shape.id} tree={shape} />
           ))}
 
           <DrawBuildingTool

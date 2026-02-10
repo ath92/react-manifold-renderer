@@ -38,14 +38,9 @@ function buildAncestorMatrix(matrices: number[][]): THREE.Matrix4 {
 interface SelectionOverlayProps {
   tree: CsgTreeNode;
   selectedId: string;
-  shapeIndex: number;
 }
 
-export function SelectionOverlay({
-  tree,
-  selectedId,
-  shapeIndex,
-}: SelectionOverlayProps) {
+export function SelectionOverlay({ tree, selectedId }: SelectionOverlayProps) {
   const [selectionGeometry, setSelectionGeometry] =
     useState<THREE.BufferGeometry | null>(null);
   const groupRef = useRef<THREE.Group>(null!);
@@ -161,7 +156,7 @@ export function SelectionOverlay({
     if (deltaMatrix) {
       const newTree = applyTransformDelta(tree, selectedId, deltaMatrix);
       if (newTree) {
-        updateShape(shapeIndex, newTree);
+        updateShape(tree.id, newTree);
       }
     }
 
@@ -170,14 +165,7 @@ export function SelectionOverlay({
     group.position.copy(pos);
     group.quaternion.copy(quat);
     group.scale.copy(scl);
-  }, [
-    transformMode,
-    originalTransform,
-    tree,
-    selectedId,
-    shapeIndex,
-    updateShape,
-  ]);
+  }, [transformMode, originalTransform, tree, selectedId, updateShape]);
 
   // Cleanup geometry on unmount
   useEffect(() => {
