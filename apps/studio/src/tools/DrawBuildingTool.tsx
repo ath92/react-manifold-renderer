@@ -49,6 +49,22 @@ function wouldSelfIntersect(vertices: Vec2[], candidate: Vec2): boolean {
   return false;
 }
 
+/** Signed area of a polygon; positive if CCW, negative if CW. */
+function signedArea(vertices: Vec2[]): number {
+  let area = 0;
+  for (let i = 0, n = vertices.length; i < n; i++) {
+    const [x1, y1] = vertices[i];
+    const [x2, y2] = vertices[(i + 1) % n];
+    area += (x2 - x1) * (y2 + y1);
+  }
+  return -area / 2; // negate because standard formula assumes Y-up
+}
+
+/** Ensure polygon is CCW; reverse if necessary. */
+function ensureCCW(vertices: Vec2[]): Vec2[] {
+  return signedArea(vertices) < 0 ? [...vertices].reverse() : vertices;
+}
+
 /** Would closing the polygon (connecting last vertex to first) cause self-intersection? */
 function wouldClosingIntersect(vertices: Vec2[]): boolean {
   const n = vertices.length;
@@ -228,8 +244,8 @@ function BuildingPreview({
   // Convert height to number of levels (at least 1)
   const levels = Math.max(1, Math.round(Math.abs(height) / LEVEL_HEIGHT));
 
-  // Z-up: Three.js ground coords [x, y] match CSG polygon coords [x, y] directly
-  const csgPolygon = useMemo<Vec2[]>(() => polygon, [polygon]);
+  // Ensure CCW winding so CrossSection with "Positive" fill rule works
+  const csgPolygon = useMemo<Vec2[]>(() => ensureCCW(polygon), [polygon]);
 
   const buildingTree = useMemo(
     () =>
@@ -275,8 +291,8 @@ type Phase = "drawing" | "extruding" | "idle";
 
 /** Convert XY ground-plane polygon + height into a building CSG tree node. */
 function buildBuildingNode(polygon: Vec2[], height: number): CsgTreeNode {
-  // Z-up: polygon coords [x, y] match CSG [x, y] directly
-  const csgPolygon = polygon;
+  // Ensure CCW winding so CrossSection with "Positive" fill rule works
+  const csgPolygon = ensureCCW(polygon);
   const levels = Math.max(1, Math.round(Math.abs(height) / LEVEL_HEIGHT));
 
   return buildBuilding({
