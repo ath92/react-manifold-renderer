@@ -30,8 +30,6 @@ import {
   useSetSelectedId,
   useCursorParentId,
   useSetCursorParentId,
-  useShapes,
-  useAddShape,
   useDrawToolActive,
   useSetDrawToolActive,
   useTransformMode,
@@ -39,6 +37,7 @@ import {
   useIsDraggingGizmo,
   type TransformMode,
 } from "./store";
+import { useShapes, useAddShape } from "./sync-store";
 
 // ─── CSG Scene ───────────────────────────────────────────────────────────────
 

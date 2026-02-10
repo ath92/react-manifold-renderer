@@ -14,11 +14,8 @@ import {
   makeScaleMatrix,
 } from "../types/CsgTree";
 import { CsgTreeRenderer } from "./CsgTreeRenderer";
-import {
-  useTransformMode,
-  useSetIsDraggingGizmo,
-  useUpdateShape,
-} from "../store";
+import { useTransformMode, useSetIsDraggingGizmo } from "../store";
+import { useUpdateShape } from "../sync-store";
 
 // ─── Ancestor Matrix ─────────────────────────────────────────────────────────
 
