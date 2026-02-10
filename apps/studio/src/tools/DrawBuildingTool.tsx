@@ -2,11 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 import type { Mesh } from "manifold-3d";
-import {
-  CsgRoot,
-  Rotate,
-  meshToGeometry,
-} from "@manifold-studio/react-manifold";
+import { CsgRoot, meshToGeometry } from "@manifold-studio/react-manifold";
 import type { CsgTreeNode } from "../types/CsgTree";
 import { CsgTreeRenderer } from "../components/CsgTreeRenderer";
 import { buildBuilding } from "../building-components/Building";
@@ -72,8 +68,9 @@ function wouldClosingIntersect(vertices: Vec2[]): boolean {
 }
 
 // ─── Ground Plane Raycaster ──────────────────────────────────────────────────
+// Z-up: ground plane is XY at Z=0
 
-const GROUND_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+const GROUND_PLANE = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 const CLOSE_THRESHOLD = 0.3; // world units to snap to first vertex
 
 function useGroundPoint() {
@@ -91,7 +88,7 @@ function useGroundPoint() {
 
       const hit = new THREE.Vector3();
       if (raycaster.ray.intersectPlane(GROUND_PLANE, hit)) {
-        return [hit.x, hit.z]; // XZ plane → 2D polygon coords
+        return [hit.x, hit.y]; // XY plane → 2D polygon coords (same as CSG)
       }
       return null;
     },
@@ -99,7 +96,7 @@ function useGroundPoint() {
   );
 }
 
-/** Project a screen-space mouse position onto the vertical axis through `origin`. */
+/** Project a screen-space mouse position onto the vertical (Z) axis through `origin`. */
 function useVerticalProject() {
   const { camera, gl } = useThree();
 
@@ -115,9 +112,9 @@ function useVerticalProject() {
       const ray = new THREE.Raycaster();
       ray.setFromCamera(ndc, camera);
 
-      // The vertical axis line passes through (origin.x, 0, origin.y) going upward
-      const lineOrigin = new THREE.Vector3(origin[0], 0, origin[1]);
-      const lineDir = new THREE.Vector3(0, 1, 0);
+      // The vertical axis line passes through (origin.x, origin.y, 0) going upward along Z
+      const lineOrigin = new THREE.Vector3(origin[0], origin[1], 0);
+      const lineDir = new THREE.Vector3(0, 0, 1);
 
       // Find closest point between the ray and the vertical line
       const w0 = new THREE.Vector3().subVectors(ray.ray.origin, lineOrigin);
@@ -134,8 +131,6 @@ function useVerticalProject() {
       const s = (a * e - b * d) / denom;
 
       // s is the parameter along the vertical line — that's our height
-      // Only allow non-negative extrusion: clamp at 0 if needed, but we'll
-      // show it even for negative to let the user see feedback
       void t;
       return s;
     },
@@ -155,7 +150,7 @@ function VertexDot({
   highlight?: boolean;
 }) {
   return (
-    <mesh position={[position[0], 0.01, position[1]]}>
+    <mesh position={[position[0], position[1], 0.01]}>
       <circleGeometry args={[isFirst ? 0.12 : 0.08, 16]} />
       <meshBasicMaterial
         color={highlight ? "#4fc3f7" : isFirst ? "#ff9800" : "#ffffff"}
@@ -178,10 +173,10 @@ function PolygonLines({
   const geometry = useMemo(() => {
     if (vertices.length < 2) return null;
     const points: THREE.Vector3[] = vertices.map(
-      (v) => new THREE.Vector3(v[0], 0.01, v[1]),
+      (v) => new THREE.Vector3(v[0], v[1], 0.01),
     );
     if (closed) {
-      points.push(new THREE.Vector3(vertices[0][0], 0.01, vertices[0][1]));
+      points.push(new THREE.Vector3(vertices[0][0], vertices[0][1], 0.01));
     }
     return new THREE.BufferGeometry().setFromPoints(points);
   }, [vertices, closed]);
@@ -233,12 +228,8 @@ function BuildingPreview({
   // Convert height to number of levels (at least 1)
   const levels = Math.max(1, Math.round(Math.abs(height) / LEVEL_HEIGHT));
 
-  // The polygon stores [x, z] in Three.js world space (XZ ground plane).
-  // CSG building uses XY polygon, so negate second coord and reverse winding.
-  const csgPolygon = useMemo<Vec2[]>(
-    () => polygon.map(([x, z]) => [x, -z] as Vec2).reverse(),
-    [polygon],
-  );
+  // Z-up: Three.js ground coords [x, y] match CSG polygon coords [x, y] directly
+  const csgPolygon = useMemo<Vec2[]>(() => polygon, [polygon]);
 
   const buildingTree = useMemo(
     () =>
@@ -261,9 +252,7 @@ function BuildingPreview({
   return (
     <>
       <CsgRoot onMesh={handleMesh}>
-        <Rotate x={-90}>
-          <CsgTreeRenderer node={buildingTree} />
-        </Rotate>
+        <CsgTreeRenderer node={buildingTree} />
       </CsgRoot>
       {geometry && (
         <mesh geometry={geometry}>
@@ -284,9 +273,10 @@ function BuildingPreview({
 
 type Phase = "drawing" | "extruding" | "idle";
 
-/** Convert XZ ground-plane polygon + height into a building CSG tree node. */
+/** Convert XY ground-plane polygon + height into a building CSG tree node. */
 function buildBuildingNode(polygon: Vec2[], height: number): CsgTreeNode {
-  const csgPolygon = polygon.map(([x, z]) => [x, -z] as Vec2).reverse();
+  // Z-up: polygon coords [x, y] match CSG [x, y] directly
+  const csgPolygon = polygon;
   const levels = Math.max(1, Math.round(Math.abs(height) / LEVEL_HEIGHT));
 
   return buildBuilding({
@@ -354,8 +344,8 @@ export function DrawBuildingTool({
         if (vertices.length >= 3) {
           const first = vertices[0];
           const dx = pt[0] - first[0];
-          const dz = pt[1] - first[1];
-          if (Math.sqrt(dx * dx + dz * dz) < CLOSE_THRESHOLD) {
+          const dy = pt[1] - first[1];
+          if (Math.sqrt(dx * dx + dy * dy) < CLOSE_THRESHOLD) {
             if (!wouldClosingIntersect(vertices)) {
               setPhase("extruding");
               setExtrudeHeight(0);
@@ -382,8 +372,8 @@ export function DrawBuildingTool({
         if (pt) {
           const first = vertices[0];
           const dx = pt[0] - first[0];
-          const dz = pt[1] - first[1];
-          setHoverNearFirst(Math.sqrt(dx * dx + dz * dz) < CLOSE_THRESHOLD);
+          const dy = pt[1] - first[1];
+          setHoverNearFirst(Math.sqrt(dx * dx + dy * dy) < CLOSE_THRESHOLD);
         }
       }
 
@@ -477,12 +467,6 @@ export function DrawBuildingTool({
 
   return (
     <group>
-      {/* Ground plane for raycasting (invisible) */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} visible={false}>
-        <planeGeometry args={[100, 100]} />
-        <meshBasicMaterial />
-      </mesh>
-
       {/* Vertex dots */}
       {vertices.map((v, i) => (
         <VertexDot

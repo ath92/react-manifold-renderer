@@ -5,7 +5,6 @@ import { OrbitControls } from "@react-three/drei";
 import type { Mesh } from "manifold-3d";
 import {
   CsgRoot,
-  Rotate,
   meshToGeometry,
   buildTriNodeIdMap,
   nodeIdForFace,
@@ -84,9 +83,7 @@ function CsgScene({
   return (
     <>
       <CsgRoot onMesh={handleMesh} onError={handleError}>
-        <Rotate x={-90}>
-          <CsgTreeRenderer node={tree} />
-        </Rotate>
+        <CsgTreeRenderer node={tree} />
       </CsgRoot>
       {error && (
         <mesh position={[0, 2, 0]}>
@@ -255,13 +252,13 @@ function App() {
 
       <div style={{ flex: 1 }}>
         <Canvas
-          camera={{ position: [8, 6, 8], fov: 50 }}
+          camera={{ position: [8, -8, 6], up: [0, 0, 1], fov: 50 }}
           onPointerMissed={() => setSelectedId(null)}
         >
           <color attach="background" args={["#242424"]} />
           <ambientLight intensity={0.4} />
-          <directionalLight position={[10, 10, 10]} intensity={1} />
-          <directionalLight position={[-10, -10, -10]} intensity={0.3} />
+          <directionalLight position={[10, -10, 10]} intensity={1} />
+          <directionalLight position={[-10, 10, -10]} intensity={0.3} />
 
           {shapes.map((shape, index) => (
             <CsgScene key={shape.id} tree={shape} shapeIndex={index} />
@@ -273,7 +270,10 @@ function App() {
             onDeactivate={() => setDrawToolActive(false)}
           />
 
-          <gridHelper args={[20, 20, "#444", "#333"]} />
+          <gridHelper
+            args={[20, 20, "#444", "#333"]}
+            rotation={[Math.PI / 2, 0, 0]}
+          />
           <OrbitControls
             makeDefault
             enabled={!drawToolActive && !isDraggingGizmo}

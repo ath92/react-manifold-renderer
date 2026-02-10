@@ -2,11 +2,7 @@ import { useState, useCallback, useMemo, useRef, useEffect } from "react";
 import * as THREE from "three";
 import { TransformControls } from "@react-three/drei";
 import type { Mesh } from "manifold-3d";
-import {
-  CsgRoot,
-  Rotate,
-  meshToGeometry,
-} from "@manifold-studio/react-manifold";
+import { CsgRoot, meshToGeometry } from "@manifold-studio/react-manifold";
 import type { CsgTreeNode } from "../types/CsgTree";
 import {
   findNodeById,
@@ -24,32 +20,19 @@ import {
   useUpdateShape,
 } from "../store";
 
-// ─── Coordinate Conversion ───────────────────────────────────────────────────
-// CSG is Z-up, Three.js is Y-up. The CsgRoot applies <Rotate x={-90}> which
-// rotates CSG output into Three.js space. We need the same rotation for the
-// ancestor transform matrix so the selection overlay aligns with the main mesh.
-
-const Z_UP_TO_Y_UP = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
-const Y_UP_TO_Z_UP = new THREE.Matrix4().makeRotationX(Math.PI / 2);
+// ─── Ancestor Matrix ─────────────────────────────────────────────────────────
 
 /**
- * Build a Three.js Matrix4 from a chain of CSG ancestor transform matrices,
- * converted to Three.js Y-up space.
+ * Build a Three.js Matrix4 from a chain of CSG ancestor transform matrices.
+ * No coordinate conversion needed — Three.js camera is Z-up, same as CSG.
  */
 function buildAncestorMatrix(matrices: number[][]): THREE.Matrix4 {
-  // Multiply all ancestor matrices together (root-to-target order)
   let combined = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
   for (const m of matrices) {
     combined = multiplyMatrices(combined, m);
   }
-
-  const csgMatrix = new THREE.Matrix4();
-  csgMatrix.fromArray(combined);
-
-  // Convert to Three.js Y-up space: R * M_csg * R^-1
   const result = new THREE.Matrix4();
-  result.multiplyMatrices(Z_UP_TO_Y_UP, csgMatrix);
-  result.multiply(Y_UP_TO_Z_UP);
+  result.fromArray(combined);
   return result;
 }
 
@@ -139,22 +122,21 @@ export function SelectionOverlay({
     let deltaMatrix: number[] | null = null;
 
     if (transformMode === "translate") {
-      const dx3 = group.position.x - origPos.x;
-      const dy3 = group.position.y - origPos.y;
-      const dz3 = group.position.z - origPos.z;
+      const dx = group.position.x - origPos.x;
+      const dy = group.position.y - origPos.y;
+      const dz = group.position.z - origPos.z;
 
-      if (Math.abs(dx3) < 1e-6 && Math.abs(dy3) < 1e-6 && Math.abs(dz3) < 1e-6)
+      if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6 && Math.abs(dz) < 1e-6)
         return;
 
-      // Three.js Y-up (x, y, z) → CSG Z-up (x, -z, y)
-      deltaMatrix = makeTranslationMatrix(dx3, -dz3, dy3);
+      deltaMatrix = makeTranslationMatrix(dx, dy, dz);
     } else if (transformMode === "rotate") {
       const deltaQuat = origQuat.clone().invert().premultiply(group.quaternion);
-      const euler3 = new THREE.Euler().setFromQuaternion(deltaQuat, "XYZ");
+      const euler = new THREE.Euler().setFromQuaternion(deltaQuat, "XYZ");
 
-      const dxDeg = (euler3.x * 180) / Math.PI;
-      const dyDeg = (euler3.y * 180) / Math.PI;
-      const dzDeg = (euler3.z * 180) / Math.PI;
+      const dxDeg = (euler.x * 180) / Math.PI;
+      const dyDeg = (euler.y * 180) / Math.PI;
+      const dzDeg = (euler.z * 180) / Math.PI;
 
       if (
         Math.abs(dxDeg) < 0.01 &&
@@ -163,8 +145,7 @@ export function SelectionOverlay({
       )
         return;
 
-      // Three.js Y-up rot(x, y, z) → CSG Z-up rot(x, -z, y)
-      deltaMatrix = makeRotationMatrix(dxDeg, -dzDeg, dyDeg);
+      deltaMatrix = makeRotationMatrix(dxDeg, dyDeg, dzDeg);
     } else if (transformMode === "scale") {
       const sx = group.scale.x / origScl.x;
       const sy = group.scale.y / origScl.y;
@@ -177,8 +158,7 @@ export function SelectionOverlay({
       )
         return;
 
-      // Three.js Y-up scale(x, y, z) → CSG Z-up scale(x, z, y)
-      deltaMatrix = makeScaleMatrix(sx, sz, sy);
+      deltaMatrix = makeScaleMatrix(sx, sy, sz);
     }
 
     if (deltaMatrix) {
@@ -215,9 +195,7 @@ export function SelectionOverlay({
     <>
       {/* Build selection subtree geometry via a second CsgRoot */}
       <CsgRoot onMesh={handleSelectionMesh}>
-        <Rotate x={-90}>
-          <CsgTreeRenderer node={selectedNode} />
-        </Rotate>
+        <CsgTreeRenderer node={selectedNode} />
       </CsgRoot>
 
       {/* Selection overlay mesh positioned by ancestor transforms */}
