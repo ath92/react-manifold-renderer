@@ -31,16 +31,21 @@ function CsgTreeNodeRow({
   node,
   depth,
   selectedId,
+  cursorParentId,
   onSelect,
+  onEnter,
 }: {
   node: CsgTreeNode;
   depth: number;
   selectedId?: string | null;
+  cursorParentId?: string | null;
   onSelect?: (node: CsgTreeNode) => void;
+  onEnter?: (id: string | null) => void;
 }) {
   const isParent = hasChildren(node);
   const [expanded, setExpanded] = useState(depth < DEFAULT_EXPAND_DEPTH);
   const isSelected = node.id === selectedId;
+  const isCursorParent = node.id === cursorParentId;
 
   return (
     <div>
@@ -55,10 +60,18 @@ function CsgTreeNodeRow({
           cursor: "pointer",
           userSelect: "none",
           backgroundColor: isSelected ? "#3a3a3a" : "transparent",
+          borderLeft: isCursorParent
+            ? "2px solid #4fc3f7"
+            : "2px solid transparent",
           display: "flex",
           alignItems: "center",
         }}
         onClick={() => onSelect?.(node)}
+        onDoubleClick={() => {
+          if (isParent && onEnter) {
+            onEnter(node.id);
+          }
+        }}
       >
         <span
           style={{
@@ -96,7 +109,9 @@ function CsgTreeNodeRow({
             node={child}
             depth={depth + 1}
             selectedId={selectedId}
+            cursorParentId={cursorParentId}
             onSelect={onSelect}
+            onEnter={onEnter}
           />
         ))}
     </div>
@@ -108,11 +123,15 @@ function CsgTreeNodeRow({
 export function CsgTreePanel({
   tree,
   selectedId,
+  cursorParentId,
   onSelect,
+  onEnter,
 }: {
   tree: CsgTreeNode;
   selectedId?: string | null;
+  cursorParentId?: string | null;
   onSelect?: (node: CsgTreeNode) => void;
+  onEnter?: (id: string | null) => void;
 }) {
   return (
     <fieldset
@@ -129,7 +148,9 @@ export function CsgTreePanel({
         node={tree}
         depth={0}
         selectedId={selectedId}
+        cursorParentId={cursorParentId}
         onSelect={onSelect}
+        onEnter={onEnter}
       />
     </fieldset>
   );

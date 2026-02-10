@@ -14,7 +14,13 @@ import type {
   TriNodeIdMap,
 } from "@manifold-studio/react-manifold";
 import type { CsgTreeNode } from "./types/CsgTree";
-import { genId, findNodeById } from "./types/CsgTree";
+import {
+  genId,
+  findNodeById,
+  findDirectChildAncestor,
+  findParentNode,
+  hasChildren,
+} from "./types/CsgTree";
 import { CsgTreeRenderer } from "./components/CsgTreeRenderer";
 import { CsgTreePanel } from "./components/CsgTreePanel";
 import { SelectionOverlay } from "./components/SelectionOverlay";
@@ -22,6 +28,8 @@ import { DrawBuildingTool } from "./tools/DrawBuildingTool";
 import {
   useSelectedId,
   useSetSelectedId,
+  useCursorParentId,
+  useSetCursorParentId,
   useShapes,
   useAddShape,
   useDrawToolActive,
@@ -45,7 +53,10 @@ function CsgScene({
   const [error, setError] = useState<string | null>(null);
   const selectedId = useSelectedId();
   const setSelectedId = useSetSelectedId();
+  const cursorParentId = useCursorParentId();
+  const setCursorParentId = useSetCursorParentId();
   const triNodeIdMapRef = useRef<TriNodeIdMap>([]);
+  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMesh = useCallback((mesh: Mesh, idMap: OriginalIdMap) => {
     const newGeometry = meshToGeometry(mesh) as unknown as THREE.BufferGeometry;
@@ -62,19 +73,62 @@ function CsgScene({
     setError(err.message);
   }, []);
 
+  // Resolve a face click to the correct node at the current cursor level
+  const resolveClickTarget = useCallback(
+    (faceIndex: number): string | undefined => {
+      const leafId = nodeIdForFace(triNodeIdMapRef.current, faceIndex);
+      if (!leafId) return undefined;
+      // Determine the effective cursor parent for this shape
+      const effectiveParent =
+        cursorParentId && findNodeById(tree, cursorParentId)
+          ? cursorParentId
+          : tree.id;
+      return findDirectChildAncestor(tree, leafId, effectiveParent);
+    },
+    [tree, cursorParentId],
+  );
+
   const handleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
       e.stopPropagation();
+      // Delay single-click to distinguish from double-click
+      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = setTimeout(() => {
+        clickTimerRef.current = null;
+        if (e.faceIndex != null) {
+          const resolvedId = resolveClickTarget(e.faceIndex);
+          if (resolvedId) {
+            setSelectedId(resolvedId);
+            return;
+          }
+        }
+        setSelectedId(tree.id);
+      }, 250);
+    },
+    [tree.id, setSelectedId, resolveClickTarget],
+  );
+
+  const handleDoubleClick = useCallback(
+    (e: ThreeEvent<MouseEvent>) => {
+      e.stopPropagation();
+      // Cancel the pending single-click
+      if (clickTimerRef.current) {
+        clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
       if (e.faceIndex != null) {
-        const nodeId = nodeIdForFace(triNodeIdMapRef.current, e.faceIndex);
-        if (nodeId) {
-          setSelectedId(nodeId);
-          return;
+        const resolvedId = resolveClickTarget(e.faceIndex);
+        if (resolvedId) {
+          const node = findNodeById(tree, resolvedId);
+          if (node && hasChildren(node)) {
+            // Enter this node — make its children selectable
+            setCursorParentId(resolvedId);
+            return;
+          }
         }
       }
-      setSelectedId(tree.id);
     },
-    [tree.id, setSelectedId],
+    [tree, resolveClickTarget, setCursorParentId],
   );
 
   // Check if the selection lives within this shape's tree
@@ -95,6 +149,7 @@ function CsgScene({
         <mesh
           geometry={geometry as unknown as THREE.BufferGeometry}
           onClick={handleClick}
+          onDoubleClick={handleDoubleClick}
         >
           <meshStandardMaterial color="#e8d4b8" flatShading />
         </mesh>
@@ -125,6 +180,8 @@ function App() {
   const addShape = useAddShape();
   const selectedId = useSelectedId();
   const setSelectedId = useSetSelectedId();
+  const cursorParentId = useCursorParentId();
+  const setCursorParentId = useSetCursorParentId();
   const transformMode = useTransformMode();
   const setTransformMode = useSetTransformMode();
   const isDraggingGizmo = useIsDraggingGizmo();
@@ -152,7 +209,7 @@ function App() {
     [setSelectedId],
   );
 
-  // T/R/S keyboard shortcuts for transform mode
+  // T/R/S keyboard shortcuts for transform mode + Escape for cursor level
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't intercept if typing in an input
@@ -162,6 +219,31 @@ function App() {
       )
         return;
 
+      if (e.key === "Escape") {
+        if (cursorParentId) {
+          // Go up one level: find the parent of the current cursor parent
+          // Search across all shapes to find which tree contains it
+          for (const shape of shapes) {
+            const parent = findParentNode(shape, cursorParentId);
+            if (parent) {
+              // If the parent is the shape root, go back to root level
+              setCursorParentId(parent.id === shape.id ? null : parent.id);
+              return;
+            }
+            // If cursorParentId IS the shape root, go to null
+            if (shape.id === cursorParentId) {
+              setCursorParentId(null);
+              return;
+            }
+          }
+          // Cursor parent not found in any shape (stale), reset
+          setCursorParentId(null);
+        } else {
+          setSelectedId(null);
+        }
+        return;
+      }
+
       const mode = TRANSFORM_KEYS[e.key.toLowerCase()];
       if (mode) {
         setTransformMode(mode);
@@ -169,7 +251,13 @@ function App() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [setTransformMode]);
+  }, [
+    setTransformMode,
+    cursorParentId,
+    shapes,
+    setCursorParentId,
+    setSelectedId,
+  ]);
 
   return (
     <div style={{ width: "100vw", height: "100vh", display: "flex" }}>
@@ -240,13 +328,16 @@ function App() {
         <CsgTreePanel
           tree={sceneTree}
           selectedId={selectedId}
+          cursorParentId={cursorParentId}
           onSelect={handleTreeSelect}
+          onEnter={setCursorParentId}
         />
 
         <div style={{ marginTop: "auto", fontSize: "12px", color: "#666" }}>
           <p>T / R / S to switch transform mode</p>
           <p>Drag to rotate, scroll to zoom</p>
-          <p>Click to select, background to deselect</p>
+          <p>Click to select, double-click to enter</p>
+          <p>Escape to go up / deselect</p>
         </div>
       </div>
 

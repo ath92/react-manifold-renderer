@@ -337,6 +337,43 @@ export function findParentNode(
 }
 
 /**
+ * Build a path of node IDs from root to the target node.
+ * Returns true if the target was found, with `path` filled root→target.
+ */
+function buildPathToNode(
+  node: CsgTreeNode,
+  targetId: string,
+  path: string[],
+): boolean {
+  path.push(node.id);
+  if (node.id === targetId) return true;
+  if (hasChildren(node)) {
+    for (const child of node.children) {
+      if (buildPathToNode(child, targetId, path)) return true;
+    }
+  }
+  path.pop();
+  return false;
+}
+
+/**
+ * Given a leaf node ID and a cursor parent ID, find the direct child of
+ * the cursor parent that is an ancestor of (or is) the leaf.
+ * Returns the node ID of that direct child, or undefined if not found.
+ */
+export function findDirectChildAncestor(
+  root: CsgTreeNode,
+  leafId: string,
+  cursorParentId: string,
+): string | undefined {
+  const path: string[] = [];
+  if (!buildPathToNode(root, leafId, path)) return undefined;
+  const parentIdx = path.indexOf(cursorParentId);
+  if (parentIdx === -1 || parentIdx + 1 >= path.length) return undefined;
+  return path[parentIdx + 1];
+}
+
+/**
  * Apply a transform delta to a node in the tree.
  *
  * If the node's immediate parent is already a transform node with the target
