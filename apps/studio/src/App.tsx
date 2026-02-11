@@ -72,12 +72,14 @@ function CsgScene({ tree }: { tree: CsgTreeNode }) {
     (faceIndex: number): string | undefined => {
       const leafId = nodeIdForFace(triNodeIdMapRef.current, faceIndex);
       if (!leafId) return undefined;
-      // Determine the effective cursor parent for this shape
-      const effectiveParent =
-        cursorParentId && findNodeById(tree, cursorParentId)
-          ? cursorParentId
-          : tree.id;
-      return findDirectChildAncestor(tree, leafId, effectiveParent);
+      // If no cursor parent is set, we're at the top level — select the whole shape
+      if (!cursorParentId) return tree.id;
+      // If the cursor parent lives within this shape, resolve to its direct child
+      if (findNodeById(tree, cursorParentId)) {
+        return findDirectChildAncestor(tree, leafId, cursorParentId);
+      }
+      // Cursor parent is in a different shape — select the whole shape
+      return tree.id;
     },
     [tree, cursorParentId],
   );
@@ -113,10 +115,18 @@ function CsgScene({ tree }: { tree: CsgTreeNode }) {
       if (e.faceIndex != null) {
         const resolvedId = resolveClickTarget(e.faceIndex);
         if (resolvedId) {
-          const node = findNodeById(tree, resolvedId);
+          let node = findNodeById(tree, resolvedId);
+          // Skip through transform nodes — cursor should land on CSG ops or primitives
+          while (
+            node &&
+            node.type === "transform" &&
+            node.children.length === 1
+          ) {
+            node = node.children[0];
+          }
           if (node && hasChildren(node)) {
             // Enter this node — make its children selectable
-            setCursorParentId(resolvedId);
+            setCursorParentId(node.id);
             return;
           }
         }
@@ -128,6 +138,10 @@ function CsgScene({ tree }: { tree: CsgTreeNode }) {
   // Check if the selection lives within this shape's tree
   const selectedNode = selectedId ? findNodeById(tree, selectedId) : undefined;
 
+  // Determine if this shape is "active" — contains the cursor or no cursor is set
+  const isActive = !cursorParentId || !!findNodeById(tree, cursorParentId);
+
+  console.log(isActive);
   return (
     <>
       <CsgRoot onMesh={handleMesh} onError={handleError}>
@@ -142,10 +156,31 @@ function CsgScene({ tree }: { tree: CsgTreeNode }) {
       {geometry && (
         <mesh
           geometry={geometry as unknown as THREE.BufferGeometry}
-          onClick={handleClick}
-          onDoubleClick={handleDoubleClick}
+          onClick={
+            isActive
+              ? handleClick
+              : (e) => {
+                  e.stopPropagation();
+                  setCursorParentId(null);
+                  setSelectedId(tree.id);
+                }
+          }
+          onDoubleClick={
+            isActive
+              ? handleDoubleClick
+              : (e) => {
+                  e.stopPropagation();
+                  setCursorParentId(null);
+                  setSelectedId(null);
+                }
+          }
         >
-          <meshStandardMaterial color="#e8d4b8" flatShading />
+          <meshStandardMaterial
+            color="#e8d4b8"
+            flatShading
+            transparent
+            opacity={isActive ? 1 : 0.3}
+          />
         </mesh>
       )}
       {selectedNode && (
@@ -175,6 +210,24 @@ function App() {
   const transformMode = useTransformMode();
   const setTransformMode = useSetTransformMode();
   const isDraggingGizmo = useIsDraggingGizmo();
+  const pointerMissedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  const handlePointerMissed = useCallback(() => {
+    if (pointerMissedTimerRef.current) {
+      // Second click within timeout — double-click on empty space
+      clearTimeout(pointerMissedTimerRef.current);
+      pointerMissedTimerRef.current = null;
+      setCursorParentId(null);
+      setSelectedId(null);
+    } else {
+      pointerMissedTimerRef.current = setTimeout(() => {
+        pointerMissedTimerRef.current = null;
+        setSelectedId(null);
+      }, 250);
+    }
+  }, [setSelectedId, setCursorParentId]);
 
   // Construct a single tree for the whole scene (for CsgTreePanel)
   const sceneTree = useMemo<CsgTreeNode>(() => {
@@ -334,7 +387,7 @@ function App() {
       <div style={{ flex: 1 }}>
         <Canvas
           camera={{ position: [8, -8, 6], up: [0, 0, 1], fov: 50 }}
-          onPointerMissed={() => setSelectedId(null)}
+          onPointerMissed={handlePointerMissed}
         >
           <color attach="background" args={["#242424"]} />
           <ambientLight intensity={0.4} />
