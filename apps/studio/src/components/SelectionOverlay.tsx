@@ -60,12 +60,16 @@ export function SelectionOverlay({ tree, selectedId }: SelectionOverlayProps) {
     [tree, selectedId],
   );
 
-  // Compute ancestor matrix
+  // Compute the full positioning matrix: ancestors + node's own matrix.
+  // The node's own matrix must be included here (not left to CsgTreeRenderer)
+  // so the group is immediately at the correct position while CsgRoot
+  // asynchronously rebuilds geometry.
   const ancestorMatrix = useMemo(() => {
-    const matrices = getAncestorTransforms(tree, selectedId);
-    if (!matrices || matrices.length === 0) return new THREE.Matrix4();
+    const matrices = getAncestorTransforms(tree, selectedId) ?? [];
+    if (selectedNode?.matrix) matrices.push(selectedNode.matrix);
+    if (matrices.length === 0) return new THREE.Matrix4();
     return buildAncestorMatrix(matrices);
-  }, [tree, selectedId]);
+  }, [tree, selectedId, selectedNode]);
 
   // Decompose the ancestor matrix to get the "original" position/rotation/scale
   const originalTransform = useMemo(() => {
@@ -179,13 +183,23 @@ export function SelectionOverlay({ tree, selectedId }: SelectionOverlayProps) {
     };
   }, [selectionGeometry]);
 
-  if (!selectedNode) return null;
+  // Strip the node's own matrix so CsgRoot builds geometry at local origin;
+  // the group positioning (ancestorMatrix) already accounts for it.
+  const localNode = useMemo(
+    () =>
+      selectedNode?.matrix
+        ? { ...selectedNode, matrix: undefined }
+        : selectedNode,
+    [selectedNode],
+  ) as CsgTreeNode | undefined;
+
+  if (!localNode) return null;
 
   return (
     <>
       {/* Build selection subtree geometry via a second CsgRoot */}
       <CsgRoot onMesh={handleSelectionMesh}>
-        <CsgTreeRenderer node={selectedNode} />
+        <CsgTreeRenderer node={localNode} />
       </CsgRoot>
 
       {/* Selection overlay mesh positioned by ancestor transforms */}
