@@ -328,6 +328,7 @@ export function DrawBuildingTool({
   const firstVertexRef = useRef<Vec2 | null>(null);
 
   // Reset when tool becomes inactive
+  /* eslint-disable react-hooks/set-state-in-effect -- resetting state on prop change is intentional */
   useEffect(() => {
     if (!active) {
       setPhase("idle");
@@ -337,6 +338,7 @@ export function DrawBuildingTool({
       firstVertexRef.current = null;
     }
   }, [active]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // ── Phase 1: Drawing ──
 

@@ -132,7 +132,7 @@ function patchNode(
 
   // Update changed / added properties
   for (const [key, newValue] of newMap) {
-    const oldValue = (oldNode as Record<string, unknown>)[key];
+    const oldValue = (oldNode as unknown as Record<string, unknown>)[key];
     if (!deepEqual(oldValue, newValue)) {
       data.set(key, newValue as Parameters<LoroMap["set"]>[1]);
     }

@@ -43,7 +43,12 @@ interface SelectionOverlayProps {
 export function SelectionOverlay({ tree, selectedId }: SelectionOverlayProps) {
   const [selectionGeometry, setSelectionGeometry] =
     useState<THREE.BufferGeometry | null>(null);
+  const [groupObject, setGroupObject] = useState<THREE.Group | null>(null);
   const groupRef = useRef<THREE.Group>(null!);
+  const groupCallbackRef = useCallback((node: THREE.Group | null) => {
+    groupRef.current = node!;
+    setGroupObject(node);
+  }, []);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const controlsRef = useRef<any>(null);
   const transformMode = useTransformMode();
@@ -184,7 +189,7 @@ export function SelectionOverlay({ tree, selectedId }: SelectionOverlayProps) {
       </CsgRoot>
 
       {/* Selection overlay mesh positioned by ancestor transforms */}
-      <group ref={groupRef}>
+      <group ref={groupCallbackRef}>
         {selectionGeometry && (
           <mesh geometry={selectionGeometry as unknown as THREE.BufferGeometry}>
             <meshStandardMaterial
@@ -201,7 +206,7 @@ export function SelectionOverlay({ tree, selectedId }: SelectionOverlayProps) {
       {/* Transform gizmo */}
       <TransformControls
         ref={controlsRef}
-        object={groupRef.current ?? undefined}
+        object={groupObject ?? undefined}
         mode={transformMode}
         onMouseUp={handleMouseUp}
       />
