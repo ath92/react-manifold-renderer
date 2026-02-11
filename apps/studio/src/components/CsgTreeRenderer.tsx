@@ -26,19 +26,23 @@ export function CsgTreeRenderer({
         ))
       : undefined;
 
+  let element: React.ReactElement | null;
+
   switch (node.type) {
     case "cube":
-      return <Cube size={node.size} center={node.center} nodeId={node.id} />;
+      element = <Cube size={node.size} center={node.center} nodeId={node.id} />;
+      break;
     case "sphere":
-      return (
+      element = (
         <Sphere
           radius={node.radius}
           segments={node.segments}
           nodeId={node.id}
         />
       );
+      break;
     case "cylinder":
-      return (
+      element = (
         <Cylinder
           radius={node.radius}
           radiusLow={node.radiusLow}
@@ -49,23 +53,34 @@ export function CsgTreeRenderer({
           nodeId={node.id}
         />
       );
+      break;
     case "extrude":
-      return (
+      element = (
         <Extrude polygon={node.polygon} height={node.height} nodeId={node.id} />
       );
+      break;
     case "union":
-      return <Union>{children}</Union>;
+      element = <Union>{children}</Union>;
+      break;
     case "difference":
-      return <Difference>{children}</Difference>;
+      element = <Difference>{children}</Difference>;
+      break;
     case "intersection":
-      return <Intersection>{children}</Intersection>;
-    case "transform":
-      return <Transform matrix={node.matrix}>{children}</Transform>;
+      element = <Intersection>{children}</Intersection>;
+      break;
     case "group":
-      return <Group>{children}</Group>;
+      element = <Group>{children}</Group>;
+      break;
     default: {
       const _exhaustive: never = node;
       return _exhaustive;
     }
   }
+
+  // Wrap with a Transform element if the node carries its own matrix
+  if (node.matrix) {
+    return <Transform matrix={node.matrix}>{element}</Transform>;
+  }
+
+  return element;
 }

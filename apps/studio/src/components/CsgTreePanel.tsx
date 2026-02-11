@@ -10,8 +10,6 @@ function getTypeColor(type: CsgTreeNode["type"]): string {
     case "difference":
     case "intersection":
       return "#c792ea";
-    case "transform":
-      return "#82aaff";
     case "cube":
     case "sphere":
     case "cylinder":

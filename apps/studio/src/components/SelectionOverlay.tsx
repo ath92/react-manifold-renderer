@@ -15,7 +15,7 @@ import {
 } from "../types/CsgTree";
 import { CsgTreeRenderer } from "./CsgTreeRenderer";
 import { useTransformMode, useSetIsDraggingGizmo } from "../store";
-import { useUpdateShape } from "../sync-store";
+import { useUpdateTree } from "../sync-store";
 
 // ─── Ancestor Matrix ─────────────────────────────────────────────────────────
 
@@ -53,7 +53,7 @@ export function SelectionOverlay({ tree, selectedId }: SelectionOverlayProps) {
   const controlsRef = useRef<any>(null);
   const transformMode = useTransformMode();
   const setIsDraggingGizmo = useSetIsDraggingGizmo();
-  const updateShape = useUpdateShape();
+  const updateTree = useUpdateTree();
 
   const selectedNode = useMemo(
     () => findNodeById(tree, selectedId),
@@ -161,7 +161,7 @@ export function SelectionOverlay({ tree, selectedId }: SelectionOverlayProps) {
     if (deltaMatrix) {
       const newTree = applyTransformDelta(tree, selectedId, deltaMatrix);
       if (newTree) {
-        updateShape(tree.id, newTree);
+        updateTree(newTree);
       }
     }
 
@@ -170,7 +170,7 @@ export function SelectionOverlay({ tree, selectedId }: SelectionOverlayProps) {
     group.position.copy(pos);
     group.quaternion.copy(quat);
     group.scale.copy(scl);
-  }, [transformMode, originalTransform, tree, selectedId, updateShape]);
+  }, [transformMode, originalTransform, tree, selectedId, updateTree]);
 
   // Cleanup geometry on unmount
   useEffect(() => {

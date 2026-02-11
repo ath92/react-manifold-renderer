@@ -18,9 +18,10 @@ import { hasChildren } from "./types/CsgTree";
 
 const doc = new LoroDoc();
 
-// Root-level container — a LoroTree (forest) where each root is a shape.
-// Do NOT write initial values here; defaults are handled in the getters
-// via ?? operators. Writing here would overwrite state imported from sync.
+// Root-level container — a LoroTree with a single root group node.
+// All shapes are children of this root. Do NOT write initial values here;
+// defaults are handled in the getters via ?? operators. Writing here would
+// overwrite state imported from sync.
 const shapesTree = doc.getTree("shapes");
 shapesTree.enableFractionalIndex(0);
 
@@ -54,12 +55,25 @@ function writeNodeToTree(treeNode: LoroTreeNode, csgNode: CsgTreeNode): void {
 }
 
 /**
- * Create a new root shape in the tree from a CsgTreeNode.
+ * Get or create the single root group node in the Loro tree.
  */
-function createShapeInTree(csgNode: CsgTreeNode): TreeID {
-  const treeNode = shapesTree.createNode();
-  writeNodeToTree(treeNode, csgNode);
-  return treeNode.id;
+function ensureRoot(): LoroTreeNode {
+  const roots = shapesTree.roots();
+  if (roots.length > 0) return roots[0];
+  const root = shapesTree.createNode();
+  root.data.set("id", crypto.randomUUID());
+  root.data.set("type", "group");
+  csgIdToTreeId.set(root.data.get("id") as string, root.id);
+  return root;
+}
+
+/**
+ * Add a shape as a child of the root group node.
+ */
+function addShapeToRoot(csgNode: CsgTreeNode): void {
+  const root = ensureRoot();
+  const childNode = root.createNode();
+  writeNodeToTree(childNode, csgNode);
 }
 
 // ─── Diff / Patch ───────────────────────────────────────────────────────────
@@ -265,43 +279,42 @@ doc.subscribe(() => {
 // value when the underlying data hasn't changed, otherwise React re-renders
 // infinitely.
 
-let cachedShapes: CsgTreeNode[] = [];
+const EMPTY_ROOT: CsgTreeNode = { id: "", type: "group", children: [] };
+let cachedTree: CsgTreeNode = EMPTY_ROOT;
 
 function refreshCache() {
   const roots = shapesTree.roots();
-  cachedShapes = roots.map(loroTreeNodeToCsg);
+  if (roots.length > 0) {
+    cachedTree = loroTreeNodeToCsg(roots[0]);
+  } else {
+    cachedTree = EMPTY_ROOT;
+  }
 }
 
 // Build initial cache
 refreshCache();
 
-function getShapes(): CsgTreeNode[] {
-  return cachedShapes;
+function getSceneTree(): CsgTreeNode {
+  return cachedTree;
 }
 
 // ─── Synced React Hooks ─────────────────────────────────────────────────────
 
-export function useShapes(): CsgTreeNode[] {
-  return useSyncExternalStore(subscribe, getShapes);
+export function useSceneTree(): CsgTreeNode {
+  return useSyncExternalStore(subscribe, getSceneTree);
 }
 
 export function useAddShape(): (node: CsgTreeNode) => void {
   return useCallback((node: CsgTreeNode) => {
-    createShapeInTree(node);
+    addShapeToRoot(node);
     doc.commit();
   }, []);
 }
 
-export function useUpdateShape(): (rootId: string, node: CsgTreeNode) => void {
-  return useCallback((rootId: string, node: CsgTreeNode) => {
-    const treeId = csgIdToTreeId.get(rootId);
-    if (!treeId) return;
-    const treeNode = shapesTree.getNodeByID(treeId);
-    if (!treeNode) return;
-    // Find the old cached version of this shape for diffing
-    const oldNode = cachedShapes.find((s) => s.id === rootId);
-    if (!oldNode) return;
-    patchNode(treeNode, oldNode, node);
+export function useUpdateTree(): (newTree: CsgTreeNode) => void {
+  return useCallback((newTree: CsgTreeNode) => {
+    const root = ensureRoot();
+    patchNode(root, cachedTree, newTree);
     doc.commit();
   }, []);
 }

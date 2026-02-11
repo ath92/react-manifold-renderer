@@ -45,16 +45,16 @@ export function buildLevel({
   const edges = edgesFromPolygon(polygon);
 
   const wallNodes: CsgTreeNode[] = edges.map((edge) =>
-    translateNode(edge.start[0], edge.start[1], 0, [
-      rotateNode(0, 0, edge.angle, [
+    translateNode(edge.start[0], edge.start[1], 0,
+      rotateNode(0, 0, edge.angle,
         buildWall({
           length: edge.length,
           height: wallHeight,
           thickness: wallThickness,
           windows: windowConfig,
         }),
-      ]),
-    ]),
+      ),
+    ),
   );
 
   return {
@@ -62,13 +62,11 @@ export function buildLevel({
     type: "union",
     children: [
       buildFloor({ polygon, thickness: floorThickness }),
-      translateNode(0, 0, floorThickness, [
-        {
-          id: genId(),
-          type: "union",
-          children: wallNodes,
-        },
-      ]),
+      translateNode(0, 0, floorThickness, {
+        id: genId(),
+        type: "union",
+        children: wallNodes,
+      }),
     ],
   };
 }

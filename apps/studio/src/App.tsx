@@ -1,8 +1,8 @@
-import { useCallback, useMemo, useRef, useEffect } from "react";
+import { useCallback, useRef, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { CsgTreeNode } from "./types/CsgTree";
-import { genId, findParentNode } from "./types/CsgTree";
+import { hasChildren, findParentNode } from "./types/CsgTree";
 import { CsgTreePanel } from "./components/CsgTreePanel";
 import { DrawBuildingTool } from "./tools/DrawBuildingTool";
 import {
@@ -17,7 +17,7 @@ import {
   useIsDraggingGizmo,
   type TransformMode,
 } from "./store";
-import { useShapes, useAddShape } from "./sync-store";
+import { useSceneTree, useAddShape } from "./sync-store";
 import { CsgScene } from "./CsgScene";
 
 // ─── App ─────────────────────────────────────────────────────────────────────
@@ -31,8 +31,9 @@ const TRANSFORM_KEYS: Record<string, TransformMode> = {
 function App() {
   const drawToolActive = useDrawToolActive();
   const setDrawToolActive = useSetDrawToolActive();
-  const shapes = useShapes();
+  const sceneTree = useSceneTree();
   const addShape = useAddShape();
+  const shapes = hasChildren(sceneTree) ? sceneTree.children : [];
   const selectedId = useSelectedId();
   const setSelectedId = useSetSelectedId();
   const cursorParentId = useCursorParentId();
@@ -58,15 +59,6 @@ function App() {
       }, 250);
     }
   }, [setSelectedId, setCursorParentId]);
-
-  // Construct a single tree for the whole scene (for CsgTreePanel)
-  const sceneTree = useMemo<CsgTreeNode>(() => {
-    return {
-      id: genId(),
-      type: "group",
-      children: shapes,
-    };
-  }, [shapes]);
 
   const handleDrawComplete = useCallback(
     (node: CsgTreeNode) => {

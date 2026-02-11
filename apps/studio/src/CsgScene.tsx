@@ -59,7 +59,6 @@ export function CsgScene({ tree }: { tree: CsgTreeNode }) {
   const cursorParentId = useCursorParentId();
   const setCursorParentId = useSetCursorParentId();
   const activeTriMapRef = useRef<TriNodeIdMap>([]);
-  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeGroupRef = useRef<THREE.Group>(null!);
 
   // Determine the cursor node (if any)
@@ -141,17 +140,12 @@ export function CsgScene({ tree }: { tree: CsgTreeNode }) {
   const handleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
       e.stopPropagation();
-      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
-      clickTimerRef.current = setTimeout(() => {
-        clickTimerRef.current = null;
-        if (e.faceIndex != null) {
-          const resolvedId = resolveClickTarget(e.faceIndex);
-          if (resolvedId) {
-            setSelectedId(resolvedId);
-            return;
-          }
+      if (e.faceIndex != null) {
+        const resolvedId = resolveClickTarget(e.faceIndex);
+        if (resolvedId) {
+          setSelectedId(resolvedId);
         }
-      }, 250);
+      }
     },
     [setSelectedId, resolveClickTarget],
   );
@@ -159,22 +153,10 @@ export function CsgScene({ tree }: { tree: CsgTreeNode }) {
   const handleDoubleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
       e.stopPropagation();
-      if (clickTimerRef.current) {
-        clearTimeout(clickTimerRef.current);
-        clickTimerRef.current = null;
-      }
       if (e.faceIndex != null) {
         const resolvedId = resolveClickTarget(e.faceIndex);
         if (resolvedId) {
-          let node = findNodeById(activeTree, resolvedId);
-          // Skip through transform nodes
-          while (
-            node &&
-            node.type === "transform" &&
-            node.children.length === 1
-          ) {
-            node = node.children[0];
-          }
+          const node = findNodeById(activeTree, resolvedId);
           if (node && hasChildren(node)) {
             setCursorParentId(node.id);
             return;

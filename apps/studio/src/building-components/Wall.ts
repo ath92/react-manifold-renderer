@@ -18,14 +18,12 @@ function buildWindowCutout({
   offsetX: number;
   offsetZ: number;
 }): CsgTreeNode {
-  return translateNode(offsetX, 0, offsetZ, [
-    {
-      id: genId(),
-      type: "cube",
-      size: [width, thickness * 3, height],
-      center: false,
-    },
-  ]);
+  return translateNode(offsetX, 0, offsetZ, {
+    id: genId(),
+    type: "cube",
+    size: [width, thickness * 3, height],
+    center: false,
+  });
 }
 
 export function buildWall({

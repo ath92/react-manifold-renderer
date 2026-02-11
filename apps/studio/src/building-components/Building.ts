@@ -30,7 +30,7 @@ export function buildBuilding({
   const levelNodes: CsgTreeNode[] = [];
   for (let i = 0; i < levels; i++) {
     levelNodes.push(
-      translateNode(0, 0, i * levelHeight, [
+      translateNode(0, 0, i * levelHeight,
         buildLevel({
           polygon,
           floorThickness,
@@ -38,7 +38,7 @@ export function buildBuilding({
           wallThickness,
           windows: windowConfig,
         }),
-      ]),
+      ),
     );
   }
 
@@ -48,13 +48,13 @@ export function buildBuilding({
     name: "building",
     children: [
       ...levelNodes,
-      translateNode(0, 0, levels * levelHeight, [
+      translateNode(0, 0, levels * levelHeight,
         buildRoof({
           polygon,
           thickness: roofThickness,
           overhang: roofOverhang,
         }),
-      ]),
+      ),
     ],
   };
 }
