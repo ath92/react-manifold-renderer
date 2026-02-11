@@ -388,6 +388,16 @@ export function applyTransformDelta(
   targetId: string,
   deltaMatrix: number[],
 ): CsgTreeNode | null {
+  const target = findNodeById(root, targetId);
+  if (!target) return null;
+
+  // If the target itself is a transform, compose the delta into it
+  if (target.type === "transform") {
+    const combined = multiplyMatrices(target.matrix, deltaMatrix);
+    const updated: CsgTransformNode = { ...target, matrix: combined };
+    return replaceNode(root, targetId, updated);
+  }
+
   const parent = findParentNode(root, targetId);
 
   // If parent is a transform with this as its only child, multiply matrices
@@ -401,9 +411,6 @@ export function applyTransformDelta(
   }
 
   // No matching parent transform — wrap with a new transform node
-  const target = findNodeById(root, targetId);
-  if (!target) return null;
-
   const wrapper: CsgTransformNode = {
     id: genId(),
     type: "transform",

@@ -1,29 +1,9 @@
-import { useState, useCallback, useMemo, useRef, useEffect } from "react";
-import * as THREE from "three";
-import { Canvas, type ThreeEvent } from "@react-three/fiber";
+import { useCallback, useMemo, useRef, useEffect } from "react";
+import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import type { Mesh } from "manifold-3d";
-import {
-  CsgRoot,
-  meshToGeometry,
-  buildTriNodeIdMap,
-  nodeIdForFace,
-} from "@manifold-studio/react-manifold";
-import type {
-  OriginalIdMap,
-  TriNodeIdMap,
-} from "@manifold-studio/react-manifold";
 import type { CsgTreeNode } from "./types/CsgTree";
-import {
-  genId,
-  findNodeById,
-  findDirectChildAncestor,
-  findParentNode,
-  hasChildren,
-} from "./types/CsgTree";
-import { CsgTreeRenderer } from "./components/CsgTreeRenderer";
+import { genId, findParentNode } from "./types/CsgTree";
 import { CsgTreePanel } from "./components/CsgTreePanel";
-import { SelectionOverlay } from "./components/SelectionOverlay";
 import { DrawBuildingTool } from "./tools/DrawBuildingTool";
 import {
   useSelectedId,
@@ -38,157 +18,7 @@ import {
   type TransformMode,
 } from "./store";
 import { useShapes, useAddShape } from "./sync-store";
-
-// ─── CSG Scene ───────────────────────────────────────────────────────────────
-
-function CsgScene({ tree }: { tree: CsgTreeNode }) {
-  const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const selectedId = useSelectedId();
-  const setSelectedId = useSetSelectedId();
-  const cursorParentId = useCursorParentId();
-  const setCursorParentId = useSetCursorParentId();
-  const triNodeIdMapRef = useRef<TriNodeIdMap>([]);
-  const clickTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleMesh = useCallback((mesh: Mesh, idMap: OriginalIdMap) => {
-    console.log(mesh, idMap);
-    const newGeometry = meshToGeometry(mesh) as unknown as THREE.BufferGeometry;
-    triNodeIdMapRef.current = buildTriNodeIdMap(mesh, idMap);
-    setGeometry((prev) => {
-      prev?.dispose();
-      return newGeometry;
-    });
-    setError(null);
-  }, []);
-
-  const handleError = useCallback((err: Error) => {
-    console.error("CSG Error:", err);
-    setError(err.message);
-  }, []);
-
-  // Resolve a face click to the correct node at the current cursor level
-  const resolveClickTarget = useCallback(
-    (faceIndex: number): string | undefined => {
-      const leafId = nodeIdForFace(triNodeIdMapRef.current, faceIndex);
-      if (!leafId) return undefined;
-      // If no cursor parent is set, we're at the top level — select the whole shape
-      if (!cursorParentId) return tree.id;
-      // If the cursor parent lives within this shape, resolve to its direct child
-      if (findNodeById(tree, cursorParentId)) {
-        return findDirectChildAncestor(tree, leafId, cursorParentId);
-      }
-      // Cursor parent is in a different shape — select the whole shape
-      return tree.id;
-    },
-    [tree, cursorParentId],
-  );
-
-  const handleClick = useCallback(
-    (e: ThreeEvent<MouseEvent>) => {
-      e.stopPropagation();
-      // Delay single-click to distinguish from double-click
-      if (clickTimerRef.current) clearTimeout(clickTimerRef.current);
-      clickTimerRef.current = setTimeout(() => {
-        clickTimerRef.current = null;
-        if (e.faceIndex != null) {
-          const resolvedId = resolveClickTarget(e.faceIndex);
-          if (resolvedId) {
-            setSelectedId(resolvedId);
-            return;
-          }
-        }
-        setSelectedId(tree.id);
-      }, 250);
-    },
-    [tree.id, setSelectedId, resolveClickTarget],
-  );
-
-  const handleDoubleClick = useCallback(
-    (e: ThreeEvent<MouseEvent>) => {
-      e.stopPropagation();
-      // Cancel the pending single-click
-      if (clickTimerRef.current) {
-        clearTimeout(clickTimerRef.current);
-        clickTimerRef.current = null;
-      }
-      if (e.faceIndex != null) {
-        const resolvedId = resolveClickTarget(e.faceIndex);
-        if (resolvedId) {
-          let node = findNodeById(tree, resolvedId);
-          // Skip through transform nodes — cursor should land on CSG ops or primitives
-          while (
-            node &&
-            node.type === "transform" &&
-            node.children.length === 1
-          ) {
-            node = node.children[0];
-          }
-          if (node && hasChildren(node)) {
-            // Enter this node — make its children selectable
-            setCursorParentId(node.id);
-            return;
-          }
-        }
-      }
-    },
-    [tree, resolveClickTarget, setCursorParentId],
-  );
-
-  // Check if the selection lives within this shape's tree
-  const selectedNode = selectedId ? findNodeById(tree, selectedId) : undefined;
-
-  // Determine if this shape is "active" — contains the cursor or no cursor is set
-  const isActive = !cursorParentId || !!findNodeById(tree, cursorParentId);
-
-  console.log(isActive);
-  return (
-    <>
-      <CsgRoot onMesh={handleMesh} onError={handleError}>
-        <CsgTreeRenderer node={tree} />
-      </CsgRoot>
-      {error && (
-        <mesh position={[0, 2, 0]}>
-          <boxGeometry args={[0.5, 0.5, 0.5]} />
-          <meshBasicMaterial color="red" />
-        </mesh>
-      )}
-      {geometry && (
-        <mesh
-          geometry={geometry as unknown as THREE.BufferGeometry}
-          onClick={
-            isActive
-              ? handleClick
-              : (e) => {
-                  e.stopPropagation();
-                  setCursorParentId(null);
-                  setSelectedId(tree.id);
-                }
-          }
-          onDoubleClick={
-            isActive
-              ? handleDoubleClick
-              : (e) => {
-                  e.stopPropagation();
-                  setCursorParentId(null);
-                  setSelectedId(null);
-                }
-          }
-        >
-          <meshStandardMaterial
-            color="#e8d4b8"
-            flatShading
-            transparent
-            opacity={isActive ? 1 : 0.3}
-          />
-        </mesh>
-      )}
-      {selectedNode && (
-        <SelectionOverlay tree={tree} selectedId={selectedId!} />
-      )}
-    </>
-  );
-}
+import { CsgScene } from "./CsgScene";
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
@@ -394,9 +224,7 @@ function App() {
           <directionalLight position={[10, -10, 10]} intensity={1} />
           <directionalLight position={[-10, 10, -10]} intensity={0.3} />
 
-          {shapes.map((shape) => (
-            <CsgScene key={shape.id} tree={shape} />
-          ))}
+          <CsgScene tree={sceneTree} />
 
           <DrawBuildingTool
             active={drawToolActive}
