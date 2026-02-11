@@ -78,14 +78,10 @@ export function CsgScene({ tree }: { tree: CsgTreeNode }) {
   }, [tree, cursorParentId, cursorNode]);
 
   // Clear stale inactive geometry when leaving cursor mode
-  useEffect(() => {
-    if (!inactiveTree) {
-      setInactiveGeometry((prev) => {
-        prev?.dispose();
-        return null;
-      });
-    }
-  }, [inactiveTree]);
+  if (!inactiveTree && inactiveGeometry) {
+    inactiveGeometry.dispose();
+    setInactiveGeometry(null);
+  }
 
   // Ancestor matrix to position the active geometry correctly
   const ancestorMatrix = useMemo(() => {

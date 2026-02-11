@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect } from "react";
+import { useCallback, useMemo, useRef, useEffect } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { CsgTreeNode } from "./types/CsgTree";
@@ -33,7 +33,10 @@ function App() {
   const setDrawToolActive = useSetDrawToolActive();
   const sceneTree = useSceneTree();
   const addShape = useAddShape();
-  const shapes = hasChildren(sceneTree) ? sceneTree.children : [];
+  const shapes = useMemo(
+    () => (hasChildren(sceneTree) ? sceneTree.children : []),
+    [sceneTree],
+  );
   const selectedId = useSelectedId();
   const setSelectedId = useSetSelectedId();
   const cursorParentId = useCursorParentId();
