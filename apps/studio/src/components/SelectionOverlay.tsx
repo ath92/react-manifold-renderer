@@ -43,6 +43,10 @@ interface SelectionOverlayProps {
 export function SelectionOverlay({ tree, selectedId }: SelectionOverlayProps) {
   const [selectionGeometry, setSelectionGeometry] =
     useState<THREE.BufferGeometry | null>(null);
+  const [geometryCenter, setGeometryCenter] = useState(
+    () => new THREE.Vector3(),
+  );
+  const ancestorMatrixRef = useRef(new THREE.Matrix4());
   const [groupObject, setGroupObject] = useState<THREE.Group | null>(null);
   const groupRef = useRef<THREE.Group>(null!);
   const groupCallbackRef = useCallback((node: THREE.Group | null) => {
@@ -70,15 +74,22 @@ export function SelectionOverlay({ tree, selectedId }: SelectionOverlayProps) {
     if (matrices.length === 0) return new THREE.Matrix4();
     return buildAncestorMatrix(matrices);
   }, [tree, selectedId, selectedNode]);
+  ancestorMatrixRef.current = ancestorMatrix;
 
-  // Decompose the ancestor matrix to get the "original" position/rotation/scale
+  // Decompose the ancestor matrix to get the "original" position/rotation/scale.
+  // Offset by geometry bounding-box center so the gizmo sits at the visual center.
   const originalTransform = useMemo(() => {
     const pos = new THREE.Vector3();
     const quat = new THREE.Quaternion();
     const scl = new THREE.Vector3();
     ancestorMatrix.decompose(pos, quat, scl);
+
+    // Map the local-space geometry center into world space and offset the group
+    const offset = geometryCenter.clone().multiply(scl).applyQuaternion(quat);
+    pos.add(offset);
+
     return { pos, quat, scl };
-  }, [ancestorMatrix]);
+  }, [ancestorMatrix, geometryCenter]);
 
   // Apply ancestor matrix to group whenever it changes
   useEffect(() => {
@@ -108,6 +119,30 @@ export function SelectionOverlay({ tree, selectedId }: SelectionOverlayProps) {
   // Handle selection mesh from the second CsgRoot
   const handleSelectionMesh = useCallback((mesh: Mesh) => {
     const newGeometry = meshToGeometry(mesh) as unknown as THREE.BufferGeometry;
+
+    // Center geometry at origin so the gizmo appears at the visual center
+    newGeometry.computeBoundingBox();
+    const center = new THREE.Vector3();
+    if (newGeometry.boundingBox) {
+      newGeometry.boundingBox.getCenter(center);
+      newGeometry.translate(-center.x, -center.y, -center.z);
+    }
+
+    // Imperatively update group position now to avoid a 1-frame glitch
+    // (state → memo → effect would lag behind the new geometry by one frame)
+    if (groupRef.current) {
+      const pos = new THREE.Vector3();
+      const quat = new THREE.Quaternion();
+      const scl = new THREE.Vector3();
+      ancestorMatrixRef.current.decompose(pos, quat, scl);
+      const offset = center.clone().multiply(scl).applyQuaternion(quat);
+      pos.add(offset);
+      groupRef.current.position.copy(pos);
+      groupRef.current.quaternion.copy(quat);
+      groupRef.current.scale.copy(scl);
+    }
+
+    setGeometryCenter(center);
     setSelectionGeometry((prev) => {
       prev?.dispose();
       return newGeometry;
