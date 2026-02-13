@@ -111,7 +111,9 @@ export function CsgScene({ tree }: { tree: CsgTreeNode }) {
 
   const handleActiveMesh = useCallback((mesh: Mesh, idMap: OriginalIdMap) => {
     const newGeometry = meshToGeometry(mesh) as unknown as THREE.BufferGeometry;
+    console.log("newGeometry", idMap);
     activeTriMapRef.current = buildTriNodeIdMap(mesh, idMap);
+    console.log("activeTriMapRef.current", activeTriMapRef.current);
     setActiveGeometry((prev) => {
       prev?.dispose();
       return newGeometry;
