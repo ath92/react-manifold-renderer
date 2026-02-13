@@ -20,10 +20,10 @@ export default {
 
     const url = new URL(request.url);
 
-    // Routes: /rooms/:roomId/(ws|snapshot|history)
+    // Routes: /rooms/:roomId/(ws|snapshot|history|tree/:frontiers)
     // Room IDs may contain alphanumeric, underscore, hyphen, colon, and dot.
     const match = url.pathname.match(
-      /^\/rooms\/([a-zA-Z0-9_:.\-]+)\/(ws|snapshot|history)$/,
+      /^\/rooms\/([a-zA-Z0-9_:.\-]+)\/(ws|snapshot|history|tree\/[^/]+)$/,
     );
     if (!match) {
       return new Response("Not found", {

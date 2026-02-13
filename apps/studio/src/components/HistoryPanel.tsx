@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { useHistoryChanges, forkTreeAt, type HistoryChange } from "../sync-store";
+import { useMergePoints, forkTreeAt, type MergePoint } from "../sync-store";
 import { useSetPreviewTree, usePreviewTree } from "../store";
 import type { PeerID } from "loro-crdt";
 
@@ -19,7 +19,7 @@ function shortPeer(peer: PeerID): string {
 }
 
 export function HistoryPanel() {
-  const changes = useHistoryChanges();
+  const mergePoints = useMergePoints();
   const previewTree = usePreviewTree();
   const setPreviewTree = useSetPreviewTree();
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
@@ -30,9 +30,8 @@ export function HistoryPanel() {
   }, [setPreviewTree]);
 
   const handleSelect = useCallback(
-    (change: HistoryChange, idx: number) => {
-      const frontiers = [{ peer: change.peer, counter: change.counter + change.length - 1 }];
-      const tree = forkTreeAt(frontiers);
+    (mp: MergePoint, idx: number) => {
+      const tree = forkTreeAt(mp.frontiers);
       setPreviewTree(tree);
       setSelectedIdx(idx);
     },
@@ -71,17 +70,17 @@ export function HistoryPanel() {
           gap: "2px",
         }}
       >
-        {changes.length === 0 && (
+        {mergePoints.length === 0 && (
           <p style={{ fontSize: "12px", color: "#666" }}>No changes yet</p>
         )}
         {/* Show newest first */}
-        {[...changes].reverse().map((change, reverseIdx) => {
-          const idx = changes.length - 1 - reverseIdx;
+        {[...mergePoints].reverse().map((mp, reverseIdx) => {
+          const idx = mergePoints.length - 1 - reverseIdx;
           const isSelected = selectedIdx === idx;
           return (
             <button
-              key={`${change.peer}-${change.counter}`}
-              onClick={() => handleSelect(change, idx)}
+              key={idx}
+              onClick={() => handleSelect(mp, idx)}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -97,14 +96,16 @@ export function HistoryPanel() {
               }}
             >
               <span style={{ flex: 1 }}>
-                <span style={{ color: "#888" }}>{shortPeer(change.peer)}</span>
+                <span style={{ color: "#888" }}>
+                  {mp.peers.map(shortPeer).join(", ")}
+                </span>
                 {" "}
                 <span style={{ color: "#aaa" }}>
-                  {change.length} op{change.length !== 1 ? "s" : ""}
+                  {mp.totalOps} op{mp.totalOps !== 1 ? "s" : ""}
                 </span>
               </span>
               <span style={{ color: "#666", fontSize: "11px", whiteSpace: "nowrap" }}>
-                {formatTime(change.timestamp)}
+                {formatTime(mp.timestamp)}
               </span>
             </button>
           );

@@ -71,6 +71,10 @@ export function CsgTreeRenderer({
     case "group":
       element = <Group>{children}</Group>;
       break;
+    case "transclude":
+      // Transclude nodes should be resolved before reaching the renderer.
+      // Render nothing if one slips through unresolved.
+      return null;
     default: {
       const _exhaustive: never = node;
       return _exhaustive;

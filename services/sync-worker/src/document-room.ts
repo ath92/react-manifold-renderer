@@ -4,7 +4,7 @@
 // are compacted via storage.setAlarm().
 
 import { DurableObject } from "cloudflare:workers";
-import { LoroDoc, VersionVector } from "loro-crdt";
+import { LoroDoc, VersionVector, type LoroTreeNode } from "loro-crdt";
 import {
   TAG_C_UPDATE,
   TAG_C_AWARENESS,
@@ -24,6 +24,18 @@ export interface Env {
 }
 
 const COMPACTION_DELAY_MS = 5_000;
+
+/** Convert a LoroTreeNode to a plain JSON object (recursive). */
+function loroTreeToJson(
+  node: LoroTreeNode,
+): Record<string, unknown> {
+  const data = node.data.toJSON() as Record<string, unknown>;
+  const children = node.children();
+  if (children && children.length > 0) {
+    data.children = children.map(loroTreeToJson);
+  }
+  return data;
+}
 
 export class DocumentRoom extends DurableObject {
   private doc: LoroDoc | null = null;
@@ -112,9 +124,16 @@ export class DocumentRoom extends DurableObject {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    const segment = url.pathname.split("/").pop();
+    const segments = url.pathname.split("/");
+    const lastSegment = segments.pop();
+    const secondLast = segments[segments.length - 1];
 
-    switch (segment) {
+    // /rooms/:roomId/tree/:frontiers
+    if (secondLast === "tree" && lastSegment) {
+      return this.handleTree(lastSegment);
+    }
+
+    switch (lastSegment) {
       case "snapshot":
         return this.handleSnapshot(url);
       case "history":
@@ -153,6 +172,36 @@ export class DocumentRoom extends DurableObject {
     return new Response(snapshot, {
       headers: { "Content-Type": "application/octet-stream" },
     });
+  }
+
+  // ─── GET /tree/:frontiers ──────────────────────────────────────────────
+
+  private async handleTree(frontiersParam: string): Promise<Response> {
+    const doc = await this.hydrate();
+
+    try {
+      const frontiers = frontiersParam.split(",").map((entry) => {
+        const [peer, counter] = entry.split(":");
+        return { peer: peer as `${number}`, counter: parseInt(counter, 10) };
+      });
+      const fork = doc.forkAt(frontiers);
+      const tree = fork.getTree("shapes");
+      const roots = tree.roots();
+
+      const result =
+        roots.length > 0
+          ? loroTreeToJson(roots[0])
+          : { id: "", type: "group", children: [] };
+
+      return new Response(JSON.stringify(result), {
+        headers: {
+          "Content-Type": "application/json",
+          "Cache-Control": "public, immutable, max-age=31536000",
+        },
+      });
+    } catch (e) {
+      return new Response(`Invalid frontiers: ${e}`, { status: 400 });
+    }
   }
 
   // ─── GET /history ───────────────────────────────────────────────────────

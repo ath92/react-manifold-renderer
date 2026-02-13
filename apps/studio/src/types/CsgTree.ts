@@ -71,6 +71,14 @@ export interface CsgGroupNode extends CsgNodeBase {
   children: CsgTreeNode[];
 }
 
+// --- Transclusion ---
+
+export interface CsgTranscludeNode extends CsgNodeBase {
+  type: "transclude";
+  roomId: string;
+  frontiers?: { peer: string; counter: number }[];
+}
+
 // --- Discriminated Union ---
 
 export type CsgPrimitiveNode =
@@ -89,7 +97,8 @@ export type CsgParentNode = CsgBooleanNode | CsgGroupNode;
 export type CsgTreeNode =
   | CsgPrimitiveNode
   | CsgBooleanNode
-  | CsgGroupNode;
+  | CsgGroupNode
+  | CsgTranscludeNode;
 
 export function hasChildren(node: CsgTreeNode): node is CsgParentNode {
   return "children" in node;

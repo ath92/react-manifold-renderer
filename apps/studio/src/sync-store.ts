@@ -339,6 +339,16 @@ export function getDoc(): LoroDoc {
   return doc;
 }
 
+/** Read-only conversion — does NOT update the live csgIdToTreeId mapping. */
+function loroTreeNodeToCsgReadOnly(treeNode: LoroTreeNode): CsgTreeNode {
+  const data = treeNode.data.toJSON() as Record<string, unknown>;
+  const children = treeNode.children();
+  if (children && children.length > 0) {
+    data.children = children.map(loroTreeNodeToCsgReadOnly);
+  }
+  return data as unknown as CsgTreeNode;
+}
+
 /**
  * Fork the doc at a given frontier and return the CSG tree at that point.
  */
@@ -349,15 +359,155 @@ export function forkTreeAt(
   const tree = forked.getTree("shapes");
   const roots = tree.roots();
   if (roots.length > 0) {
-    return loroTreeNodeToCsg(roots[0]);
+    return loroTreeNodeToCsgReadOnly(roots[0]);
   }
   return { id: "", type: "group", children: [] };
 }
 
-// History change subscription plumbing
+// ─── Merge Points ────────────────────────────────────────────────────────────
+// A MergePoint is a convergence point where all known branches have merged.
+// This gives a linear history even when the underlying DAG has branches.
+
+export interface MergePoint {
+  /** All changes grouped into this merge point (since previous merge point) */
+  changes: HistoryChange[];
+  /** Frontiers to pass to forkTreeAt() — covers all peers' causal history */
+  frontiers: { peer: PeerID; counter: number }[];
+  /** Timestamp of the latest change in the group */
+  timestamp: number;
+  /** Total number of ops across all changes in this group */
+  totalOps: number;
+  /** Distinct peers that contributed changes in this group */
+  peers: PeerID[];
+}
+
+/**
+ * Compute merge points from a lamport-sorted list of changes.
+ *
+ * Walks the DAG in lamport order, tracking a version vector (VV) per change
+ * (= the set of ops causally included). After each change, if the VV covers
+ * every op seen so far from every peer, all branches have converged.
+ */
+function computeMergePoints(changes: HistoryChange[]): MergePoint[] {
+  if (changes.length === 0) return [];
+
+  // Index: for a given (peer, counter) find the change that contains it
+  const peerChanges = new Map<PeerID, HistoryChange[]>();
+  for (const c of changes) {
+    let list = peerChanges.get(c.peer);
+    if (!list) {
+      list = [];
+      peerChanges.set(c.peer, list);
+    }
+    list.push(c);
+  }
+
+  function changeKey(c: HistoryChange): string {
+    return `${c.peer}:${c.counter}`;
+  }
+
+  function findChangeContaining(
+    peer: PeerID,
+    counter: number,
+  ): HistoryChange | undefined {
+    const list = peerChanges.get(peer);
+    if (!list) return undefined;
+    for (const c of list) {
+      if (c.counter <= counter && counter < c.counter + c.length) return c;
+    }
+    return undefined;
+  }
+
+  // Per-change version vector cache
+  type VV = Map<PeerID, number>;
+  const changeVVs = new Map<string, VV>();
+
+  function mergeVV(target: VV, source: VV): void {
+    for (const [p, c] of source) {
+      target.set(p, Math.max(target.get(p) ?? -1, c));
+    }
+  }
+
+  function vvCovers(vv: VV, target: VV): boolean {
+    for (const [peer, counter] of target) {
+      if ((vv.get(peer) ?? -1) < counter) return false;
+    }
+    return true;
+  }
+
+  const maxSeen: VV = new Map();
+  const mergePoints: MergePoint[] = [];
+  let currentGroup: HistoryChange[] = [];
+
+  for (const change of changes) {
+    // Build VV for this change from its deps
+    const vv: VV = new Map();
+    for (const dep of change.deps) {
+      const depChange = findChangeContaining(dep.peer, dep.counter);
+      if (depChange) {
+        const depVV = changeVVs.get(changeKey(depChange));
+        if (depVV) mergeVV(vv, depVV);
+      }
+    }
+    // Include this change itself
+    vv.set(
+      change.peer,
+      Math.max(vv.get(change.peer) ?? -1, change.counter + change.length - 1),
+    );
+    changeVVs.set(changeKey(change), vv);
+
+    // Update global maxSeen
+    const endpoint = change.counter + change.length - 1;
+    maxSeen.set(
+      change.peer,
+      Math.max(maxSeen.get(change.peer) ?? -1, endpoint),
+    );
+
+    currentGroup.push(change);
+
+    // If this change's VV covers everything seen so far, all branches converged
+    if (vvCovers(vv, maxSeen)) {
+      const frontiers = Array.from(vv.entries()).map(([peer, counter]) => ({
+        peer,
+        counter,
+      }));
+      const totalOps = currentGroup.reduce((sum, c) => sum + c.length, 0);
+      const peerSet = new Set(currentGroup.map((c) => c.peer));
+      mergePoints.push({
+        changes: currentGroup,
+        frontiers,
+        timestamp: change.timestamp,
+        totalOps,
+        peers: Array.from(peerSet),
+      });
+      currentGroup = [];
+    }
+  }
+
+  // Remaining non-converged changes → final group using full maxSeen as frontier
+  if (currentGroup.length > 0) {
+    const frontiers = Array.from(maxSeen.entries()).map(
+      ([peer, counter]) => ({ peer, counter }),
+    );
+    const totalOps = currentGroup.reduce((sum, c) => sum + c.length, 0);
+    const peerSet = new Set(currentGroup.map((c) => c.peer));
+    mergePoints.push({
+      changes: currentGroup,
+      frontiers,
+      timestamp: currentGroup[currentGroup.length - 1].timestamp,
+      totalOps,
+      peers: Array.from(peerSet),
+    });
+  }
+
+  return mergePoints;
+}
+
+// History subscription plumbing
 type HistoryListener = () => void;
 const historyListeners = new Set<HistoryListener>();
 let cachedChanges: HistoryChange[] = [];
+let cachedMergePoints: MergePoint[] = [];
 
 function refreshHistoryCache() {
   const allChanges = doc.getAllChanges();
@@ -369,6 +519,7 @@ function refreshHistoryCache() {
   }
   flat.sort((a, b) => a.lamport - b.lamport);
   cachedChanges = flat;
+  cachedMergePoints = computeMergePoints(flat);
 }
 
 function emitHistoryChange() {
@@ -390,6 +541,10 @@ function getHistoryChanges(): HistoryChange[] {
   return cachedChanges;
 }
 
+function getMergePoints(): MergePoint[] {
+  return cachedMergePoints;
+}
+
 // Build initial history cache
 refreshHistoryCache();
 
@@ -398,6 +553,14 @@ refreshHistoryCache();
  */
 export function useHistoryChanges(): HistoryChange[] {
   return useSyncExternalStore(subscribeHistory, getHistoryChanges);
+}
+
+/**
+ * React hook returning merge points — convergence checkpoints where all
+ * concurrent branches have been merged. Gives a linear history view.
+ */
+export function useMergePoints(): MergePoint[] {
+  return useSyncExternalStore(subscribeHistory, getMergePoints);
 }
 
 // ─── Sync Protocol Tags ─────────────────────────────────────────────────────

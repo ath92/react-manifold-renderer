@@ -17,6 +17,8 @@ function getTypeColor(type: CsgTreeNode["type"]): string {
       return "#c3e88d";
     case "group":
       return "#ffcb6b";
+    case "transclude":
+      return "#89ddff";
   }
 }
 
@@ -96,7 +98,11 @@ function CsgTreeNodeRow({
             color: getTypeColor(node.type),
           }}
         >
-          {"name" in node && node.name ? node.name : node.type}
+          {node.type === "transclude"
+            ? `${node.roomId}${node.frontiers ? " (pinned)" : " (live)"}`
+            : "name" in node && node.name
+              ? node.name
+              : node.type}
         </span>
       </div>
       {isParent &&

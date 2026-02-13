@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useEffect } from "react";
+import { useCallback, useMemo, useRef, useEffect, useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { CsgTreeNode } from "./types/CsgTree";
@@ -23,7 +23,9 @@ import {
   type PanelMode,
 } from "./store";
 import { useSceneTree, useAddShape } from "./sync-store";
+import { useResolvedTree } from "./resolve-transclusions";
 import { CsgScene } from "./CsgScene";
+import { genId } from "./types/CsgTree";
 
 // ─── Mode strip icons (simple SVG) ──────────────────────────────────────────
 
@@ -63,6 +65,7 @@ function App() {
   const setDrawToolActive = useSetDrawToolActive();
   const sceneTree = useSceneTree();
   const addShape = useAddShape();
+  const resolvedTree = useResolvedTree(sceneTree);
   const shapes = useMemo(
     () => (hasChildren(sceneTree) ? sceneTree.children : []),
     [sceneTree],
@@ -77,12 +80,15 @@ function App() {
   const panelMode = usePanelMode();
   const setPanelMode = useSetPanelMode();
   const previewTree = usePreviewTree();
+  const [showTranscludeDialog, setShowTranscludeDialog] = useState(false);
+  const [transcludeRoomId, setTranscludeRoomId] = useState("");
+  const [transcludeLive, setTranscludeLive] = useState(true);
   const pointerMissedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
 
   const isPreview = previewTree !== null;
-  const displayTree = previewTree ?? sceneTree;
+  const displayTree = previewTree ?? resolvedTree;
 
   const handlePointerMissed = useCallback(() => {
     if (pointerMissedTimerRef.current) {
@@ -112,6 +118,18 @@ function App() {
     },
     [setSelectedId],
   );
+
+  const handleAddTransclusion = useCallback(() => {
+    if (!transcludeRoomId.trim()) return;
+    addShape({
+      id: genId(),
+      type: "transclude",
+      roomId: transcludeRoomId.trim(),
+      ...(transcludeLive ? {} : { frontiers: [] }),
+    });
+    setShowTranscludeDialog(false);
+    setTranscludeRoomId("");
+  }, [addShape, transcludeRoomId, transcludeLive]);
 
   // T/R/S keyboard shortcuts for transform mode + Escape for cursor level
   useEffect(() => {
@@ -244,6 +262,88 @@ function App() {
                   >
                     {drawToolActive ? "Drawing (Esc to cancel)" : "Draw Building"}
                   </button>
+                  <button
+                    onClick={() => setShowTranscludeDialog(!showTranscludeDialog)}
+                    style={{
+                      width: "100%",
+                      padding: "8px",
+                      background: showTranscludeDialog ? "#89ddff" : "#333",
+                      color: showTranscludeDialog ? "#000" : "#fff",
+                      border: "1px solid #555",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    Transclude Room
+                  </button>
+                  {showTranscludeDialog && (
+                    <div
+                      style={{
+                        marginBottom: "8px",
+                        padding: "8px",
+                        background: "#252525",
+                        borderRadius: "4px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "6px",
+                      }}
+                    >
+                      <input
+                        type="text"
+                        placeholder="Room ID"
+                        value={transcludeRoomId}
+                        onChange={(e) => setTranscludeRoomId(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") handleAddTransclusion();
+                        }}
+                        style={{
+                          padding: "6px",
+                          background: "#1a1a1a",
+                          color: "#fff",
+                          border: "1px solid #555",
+                          borderRadius: "4px",
+                          fontSize: "12px",
+                          outline: "none",
+                        }}
+                      />
+                      <label
+                        style={{
+                          fontSize: "11px",
+                          color: "#aaa",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={transcludeLive}
+                          onChange={(e) => setTranscludeLive(e.target.checked)}
+                        />
+                        Live (uncheck for pinned)
+                      </label>
+                      <button
+                        onClick={handleAddTransclusion}
+                        disabled={!transcludeRoomId.trim()}
+                        style={{
+                          padding: "6px",
+                          background:
+                            transcludeRoomId.trim() ? "#89ddff" : "#333",
+                          color: transcludeRoomId.trim() ? "#000" : "#666",
+                          border: "none",
+                          borderRadius: "4px",
+                          cursor: transcludeRoomId.trim()
+                            ? "pointer"
+                            : "default",
+                          fontSize: "12px",
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  )}
                   <div style={{ display: "flex", gap: "4px" }}>
                     {(["translate", "rotate", "scale"] as const).map((mode) => (
                       <button
