@@ -18,6 +18,7 @@ export function buildGeometry(
 ): Manifold | null {
   // Cache hit: not dirty and has manifold
   if (!node.dirty && node.manifold) {
+    if (idMap) reRegisterIds(node, idMap);
     return node.manifold;
   }
 
@@ -167,6 +168,19 @@ export function buildGeometry(
 }
 
 // --- Helpers ---
+
+/** Re-register originalID → nodeId mappings for all primitives in a cached subtree. */
+function reRegisterIds(node: CsgNode, idMap: OriginalIdMap): void {
+  if (PRIMITIVE_TYPES.has(node.type) && node.manifold) {
+    const nodeId = node.props.nodeId as string | undefined;
+    if (nodeId) {
+      idMap.set(node.manifold.originalID(), nodeId);
+    }
+  }
+  for (const child of node.children) {
+    reRegisterIds(child, idMap);
+  }
+}
 
 function normalizeVec3(
   input: unknown,
