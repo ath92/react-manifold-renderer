@@ -10,13 +10,14 @@
 
 import { useSyncExternalStore, useCallback } from "react";
 import { LoroDoc, LoroMap, LoroTreeNode } from "loro-crdt";
-import type { TreeID } from "loro-crdt";
+import type { TreeID, PeerID } from "loro-crdt";
 import type { CsgTreeNode } from "./types/CsgTree";
 import { hasChildren } from "./types/CsgTree";
 
 // ─── Loro doc (synced state) ────────────────────────────────────────────────
 
 const doc = new LoroDoc();
+doc.setRecordTimestamp(true);
 
 // Root-level container — a LoroTree with a single root group node.
 // All shapes are children of this root. Do NOT write initial values here;
@@ -317,6 +318,86 @@ export function useUpdateTree(): (newTree: CsgTreeNode) => void {
     patchNode(root, cachedTree, newTree);
     doc.commit();
   }, []);
+}
+
+// ─── History Helpers ─────────────────────────────────────────────────────────
+
+export interface HistoryChange {
+  peer: PeerID;
+  counter: number;
+  lamport: number;
+  length: number;
+  timestamp: number;
+  message: string | undefined;
+  deps: { peer: PeerID; counter: number }[];
+}
+
+/**
+ * Get the raw LoroDoc for advanced operations (forkAt, getAllChanges, etc.)
+ */
+export function getDoc(): LoroDoc {
+  return doc;
+}
+
+/**
+ * Fork the doc at a given frontier and return the CSG tree at that point.
+ */
+export function forkTreeAt(
+  frontiers: { peer: PeerID; counter: number }[],
+): CsgTreeNode {
+  const forked = doc.forkAt(frontiers);
+  const tree = forked.getTree("shapes");
+  const roots = tree.roots();
+  if (roots.length > 0) {
+    return loroTreeNodeToCsg(roots[0]);
+  }
+  return { id: "", type: "group", children: [] };
+}
+
+// History change subscription plumbing
+type HistoryListener = () => void;
+const historyListeners = new Set<HistoryListener>();
+let cachedChanges: HistoryChange[] = [];
+
+function refreshHistoryCache() {
+  const allChanges = doc.getAllChanges();
+  const flat: HistoryChange[] = [];
+  for (const [, changes] of allChanges.entries()) {
+    for (const c of changes) {
+      flat.push(c);
+    }
+  }
+  flat.sort((a, b) => a.lamport - b.lamport);
+  cachedChanges = flat;
+}
+
+function emitHistoryChange() {
+  refreshHistoryCache();
+  for (const l of historyListeners) l();
+}
+
+// Subscribe to doc changes for history
+doc.subscribe(() => {
+  queueMicrotask(emitHistoryChange);
+});
+
+function subscribeHistory(listener: HistoryListener): () => void {
+  historyListeners.add(listener);
+  return () => historyListeners.delete(listener);
+}
+
+function getHistoryChanges(): HistoryChange[] {
+  return cachedChanges;
+}
+
+// Build initial history cache
+refreshHistoryCache();
+
+/**
+ * React hook returning the sorted list of all CRDT changes.
+ */
+export function useHistoryChanges(): HistoryChange[] {
+  return useSyncExternalStore(subscribeHistory, getHistoryChanges);
 }
 
 // ─── Sync Protocol Tags ─────────────────────────────────────────────────────

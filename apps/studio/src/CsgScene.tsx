@@ -16,6 +16,7 @@ import {
   useSelectedId,
   useSetCursorParentId,
   useSetSelectedId,
+  usePreviewTree,
 } from "./store";
 import {
   buildTriNodeIdMap,
@@ -58,6 +59,7 @@ export function CsgScene({ tree }: { tree: CsgTreeNode }) {
   const setSelectedId = useSetSelectedId();
   const cursorParentId = useCursorParentId();
   const setCursorParentId = useSetCursorParentId();
+  const previewTree = usePreviewTree();
   const activeTriMapRef = useRef<TriNodeIdMap>([]);
   const activeGroupRef = useRef<THREE.Group>(null!);
 
@@ -201,8 +203,8 @@ export function CsgScene({ tree }: { tree: CsgTreeNode }) {
         {activeGeometry && (
           <mesh
             geometry={activeGeometry}
-            onClick={handleClick}
-            onDoubleClick={handleDoubleClick}
+            onClick={previewTree ? undefined : handleClick}
+            onDoubleClick={previewTree ? undefined : handleDoubleClick}
           >
             <meshStandardMaterial color="#e8d4b8" flatShading />
           </mesh>
@@ -221,7 +223,7 @@ export function CsgScene({ tree }: { tree: CsgTreeNode }) {
         </mesh>
       )}
 
-      {selectedNode && (
+      {selectedNode && !previewTree && (
         <SelectionOverlay tree={tree} selectedId={selectedId!} />
       )}
     </>

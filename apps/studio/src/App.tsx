@@ -4,6 +4,7 @@ import { OrbitControls } from "@react-three/drei";
 import type { CsgTreeNode } from "./types/CsgTree";
 import { hasChildren, findParentNode } from "./types/CsgTree";
 import { CsgTreePanel } from "./components/CsgTreePanel";
+import { HistoryPanel } from "./components/HistoryPanel";
 import { DrawBuildingTool } from "./tools/DrawBuildingTool";
 import {
   useSelectedId,
@@ -15,10 +16,39 @@ import {
   useTransformMode,
   useSetTransformMode,
   useIsDraggingGizmo,
+  usePanelMode,
+  useSetPanelMode,
+  usePreviewTree,
   type TransformMode,
+  type PanelMode,
 } from "./store";
 import { useSceneTree, useAddShape } from "./sync-store";
 import { CsgScene } from "./CsgScene";
+
+// ─── Mode strip icons (simple SVG) ──────────────────────────────────────────
+
+function SceneIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <rect x="3" y="3" width="14" height="14" rx="2" />
+      <path d="M3 10h14M10 3v14" />
+    </svg>
+  );
+}
+
+function HistoryIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5">
+      <circle cx="10" cy="10" r="7" />
+      <path d="M10 6v4l3 2" />
+    </svg>
+  );
+}
+
+const MODE_ITEMS: { mode: PanelMode; label: string; Icon: () => JSX.Element }[] = [
+  { mode: "scene", label: "Scene", Icon: SceneIcon },
+  { mode: "history", label: "History", Icon: HistoryIcon },
+];
 
 // ─── App ─────────────────────────────────────────────────────────────────────
 
@@ -44,9 +74,15 @@ function App() {
   const transformMode = useTransformMode();
   const setTransformMode = useSetTransformMode();
   const isDraggingGizmo = useIsDraggingGizmo();
+  const panelMode = usePanelMode();
+  const setPanelMode = useSetPanelMode();
+  const previewTree = usePreviewTree();
   const pointerMissedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
+
+  const isPreview = previewTree !== null;
+  const displayTree = previewTree ?? sceneTree;
 
   const handlePointerMissed = useCallback(() => {
     if (pointerMissedTimerRef.current) {
@@ -129,10 +165,47 @@ function App() {
 
   return (
     <div style={{ width: "100vw", height: "100vh", display: "flex" }}>
+      {/* Mode strip */}
       <div
         style={{
-          width: "280px",
-          padding: "20px",
+          width: "40px",
+          background: "#111",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          paddingTop: "12px",
+          gap: "4px",
+          borderRight: "1px solid #333",
+        }}
+      >
+        {MODE_ITEMS.map(({ mode, label, Icon }) => (
+          <button
+            key={mode}
+            onClick={() => setPanelMode(mode)}
+            title={label}
+            style={{
+              width: "32px",
+              height: "32px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              background: panelMode === mode ? "#2a2a2a" : "transparent",
+              border: "none",
+              borderRadius: "6px",
+              cursor: "pointer",
+              color: panelMode === mode ? "#4fc3f7" : "#888",
+            }}
+          >
+            <Icon />
+          </button>
+        ))}
+      </div>
+
+      {/* Panel content */}
+      <div
+        style={{
+          width: "240px",
+          padding: "16px",
           background: "#1a1a1a",
           color: "#fff",
           display: "flex",
@@ -141,72 +214,85 @@ function App() {
           overflowY: "auto",
         }}
       >
-        <h2 style={{ margin: 0 }}>Manifold Studio</h2>
-        <p style={{ margin: 0, fontSize: "14px", color: "#888" }}>
-          Draw buildings on the ground plane
-        </p>
+        {panelMode === "scene" ? (
+          <>
+            <h2 style={{ margin: 0, fontSize: "16px" }}>Manifold Studio</h2>
 
-        <fieldset
-          style={{
-            border: "1px solid #444",
-            borderRadius: "4px",
-            padding: "12px",
-          }}
-        >
-          <legend style={{ color: "#aaa", fontSize: "12px" }}>Tools</legend>
-          <button
-            onClick={() => setDrawToolActive(!drawToolActive)}
-            style={{
-              width: "100%",
-              padding: "8px",
-              background: drawToolActive ? "#4fc3f7" : "#333",
-              color: drawToolActive ? "#000" : "#fff",
-              border: "1px solid #555",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontSize: "13px",
-              marginBottom: "8px",
-            }}
-          >
-            {drawToolActive ? "Drawing (Esc to cancel)" : "Draw Building"}
-          </button>
-          <div style={{ display: "flex", gap: "4px" }}>
-            {(["translate", "rotate", "scale"] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setTransformMode(mode)}
-                style={{
-                  flex: 1,
-                  padding: "6px",
-                  background: transformMode === mode ? "#4fc3f7" : "#333",
-                  color: transformMode === mode ? "#000" : "#fff",
-                  border: "1px solid #555",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                  fontSize: "11px",
-                  textTransform: "capitalize",
-                }}
-              >
-                {mode[0].toUpperCase()}
-              </button>
-            ))}
-          </div>
-        </fieldset>
+            {!isPreview && (
+              <>
+                <fieldset
+                  style={{
+                    border: "1px solid #444",
+                    borderRadius: "4px",
+                    padding: "12px",
+                  }}
+                >
+                  <legend style={{ color: "#aaa", fontSize: "12px" }}>Tools</legend>
+                  <button
+                    onClick={() => setDrawToolActive(!drawToolActive)}
+                    style={{
+                      width: "100%",
+                      padding: "8px",
+                      background: drawToolActive ? "#4fc3f7" : "#333",
+                      color: drawToolActive ? "#000" : "#fff",
+                      border: "1px solid #555",
+                      borderRadius: "4px",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                      marginBottom: "8px",
+                    }}
+                  >
+                    {drawToolActive ? "Drawing (Esc to cancel)" : "Draw Building"}
+                  </button>
+                  <div style={{ display: "flex", gap: "4px" }}>
+                    {(["translate", "rotate", "scale"] as const).map((mode) => (
+                      <button
+                        key={mode}
+                        onClick={() => setTransformMode(mode)}
+                        style={{
+                          flex: 1,
+                          padding: "6px",
+                          background: transformMode === mode ? "#4fc3f7" : "#333",
+                          color: transformMode === mode ? "#000" : "#fff",
+                          border: "1px solid #555",
+                          borderRadius: "4px",
+                          cursor: "pointer",
+                          fontSize: "11px",
+                          textTransform: "capitalize",
+                        }}
+                      >
+                        {mode[0].toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </fieldset>
 
-        <CsgTreePanel
-          tree={sceneTree}
-          selectedId={selectedId}
-          cursorParentId={cursorParentId}
-          onSelect={handleTreeSelect}
-          onEnter={setCursorParentId}
-        />
+                <CsgTreePanel
+                  tree={sceneTree}
+                  selectedId={selectedId}
+                  cursorParentId={cursorParentId}
+                  onSelect={handleTreeSelect}
+                  onEnter={setCursorParentId}
+                />
+              </>
+            )}
 
-        <div style={{ marginTop: "auto", fontSize: "12px", color: "#666" }}>
-          <p>T / R / S to switch transform mode</p>
-          <p>Drag to rotate, scroll to zoom</p>
-          <p>Click to select, double-click to enter</p>
-          <p>Escape to go up / deselect</p>
-        </div>
+            {isPreview && (
+              <p style={{ fontSize: "12px", color: "#888" }}>
+                Previewing historical version. Switch to History panel to go back to live.
+              </p>
+            )}
+
+            <div style={{ marginTop: "auto", fontSize: "12px", color: "#666" }}>
+              <p>T / R / S to switch transform mode</p>
+              <p>Drag to rotate, scroll to zoom</p>
+              <p>Click to select, double-click to enter</p>
+              <p>Escape to go up / deselect</p>
+            </div>
+          </>
+        ) : (
+          <HistoryPanel />
+        )}
       </div>
 
       <div style={{ flex: 1 }}>
@@ -219,13 +305,15 @@ function App() {
           <directionalLight position={[10, -10, 10]} intensity={1} />
           <directionalLight position={[-10, 10, -10]} intensity={0.3} />
 
-          <CsgScene tree={sceneTree} />
+          <CsgScene tree={displayTree} />
 
-          <DrawBuildingTool
-            active={drawToolActive}
-            onComplete={handleDrawComplete}
-            onDeactivate={() => setDrawToolActive(false)}
-          />
+          {!isPreview && (
+            <DrawBuildingTool
+              active={drawToolActive}
+              onComplete={handleDrawComplete}
+              onDeactivate={() => setDrawToolActive(false)}
+            />
+          )}
 
           <gridHelper
             args={[20, 20, "#444", "#333"]}
